@@ -37,13 +37,13 @@ extern zend_module_entry photon_module_entry;
 ZEND_TSRMLS_CACHE_EXTERN()
 # endif
 
-// TODO: Macros for intercepting functions and class methods
-// TODO: Structs for holding request basic info and detailed report
-
 # define PHOTON_AGENT_DEFAULT_HOST "localhost"
 // During .ini parsing it will be converted into long, but input must be string
 # define PHOTON_AGENT_DEFAULT_PORT "8989"
 # define PHOTON_AGENT_DEFAULT_SOCKET_PATH "/var/run/photon-agent.sock"
+
+// TODO: Macros for intercepting functions and class methods
+// TODO: Structs for holding request basic info and detailed report
 
 ZEND_BEGIN_MODULE_GLOBALS(photon)
     zend_bool enable;
@@ -57,7 +57,10 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     char     *application_name;
     char     *application_version;
 
-    // TODO: Socket connection itself: need union for TCP/UDP/Unix
+    char     *current_application_name;
+    char     *current_application_version;
+
+    // TODO: Socket connection itself: need a union for TCP/UDP/Unix
     char     *agent_transport;
     char     *agent_host;
     long      agent_port;
@@ -76,17 +79,17 @@ ZEND_END_MODULE_GLOBALS(photon)
 #define PHOTON_G(v) (photon_globals.v)
 #endif
 
-// TODO: Can we make this static?
-ZEND_API void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value);
+// TODO: Should we make these static?
+ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value);
 ZEND_API void photon_execute_internal(zend_execute_data *execute_data, zval *return_value);
 ZEND_API void photon_execute_ex (zend_execute_data *execute_data);
 
-static void photon_minit_connect_to_agent();
-static void photon_minit_configure_interceptors();
-static void photon_minit_override_execute();
+static int photon_minit_connect_to_agent();
+static int photon_minit_configure_interceptors();
+static int photon_minit_override_execute();
 
-static void photon_mshutdown_disconnect_from_agent();
-static void photon_mshutdown_restore_execute();
+static int photon_mshutdown_disconnect_from_agent();
+static int photon_mshutdown_restore_execute();
 
 PHP_MINIT_FUNCTION(photon);
 PHP_MSHUTDOWN_FUNCTION(photon);
@@ -95,7 +98,9 @@ PHP_MINFO_FUNCTION(photon);
 PHP_RINIT_FUNCTION(photon);
 PHP_RSHUTDOWN_FUNCTION(photon);
 
+PHP_FUNCTION(photon_get_application_name);
 PHP_FUNCTION(photon_set_application_name);
+PHP_FUNCTION(photon_get_application_version);
 PHP_FUNCTION(photon_set_application_version);
 PHP_FUNCTION(photon_set_transaction_name);
 PHP_FUNCTION(photon_get_trace_id);

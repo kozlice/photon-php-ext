@@ -77,7 +77,7 @@ ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute
     struct timespec stop;
     clock_gettime(CLOCK_MONOTONIC, &stop);
     double diff = (stop.tv_sec - start.tv_sec) * 1e3 + (stop.tv_nsec - start.tv_nsec) / 1e6;
-    printf("%d - %s - %s@%s - %f ms\n", PHOTON_G(stack_depth), file_name, class_name, function_name, diff);
+    //printf("%d - %s - %s@%s - %f ms\n", PHOTON_G(stack_depth), file_name, class_name, function_name, diff);
     PHOTON_G(stack_depth)--;
 }
 
@@ -111,24 +111,41 @@ PHP_MINIT_FUNCTION(photon)
     return SUCCESS;
 }
 
-static void photon_minit_connect_to_agent()
+static int photon_minit_connect_to_agent()
 {
     // TODO: Create socket connection: must be per-process, not per-thread, yet synced write into buffer is required
     // TODO: On error - disable extension?
+    if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
+        return SUCCESS;
+    }
+
+    if (strcmp(PHOTON_G(agent_transport), "tcp") == 0) {
+        return SUCCESS;
+    }
+
+    if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
+        return SUCCESS;
+    }
+
+    // TODO: Log unknown transport & disable extension
+    return FAILURE;
 }
 
-static void photon_minit_configure_interceptors()
+static int photon_minit_configure_interceptors()
 {
     // TODO: Configure interceptors for internal & userland functions
+    return SUCCESS;
 }
 
-static void photon_minit_override_execute()
+static int photon_minit_override_execute()
 {
     // Overload VM execution functions. This allows custom tracing/profiling
     original_zend_execute_internal = zend_execute_internal;
     original_zend_execute_ex = zend_execute_ex;
     zend_execute_internal = photon_execute_internal;
     zend_execute_ex = photon_execute_ex;
+
+    return SUCCESS;
 }
 
 PHP_MSHUTDOWN_FUNCTION(photon)
@@ -146,15 +163,18 @@ PHP_MSHUTDOWN_FUNCTION(photon)
     return SUCCESS;
 }
 
-static void photon_mshutdown_disconnect_from_agent()
+static int photon_mshutdown_disconnect_from_agent()
 {
     // TODO: Close socket if open
+    return SUCCESS;
 }
 
-static void photon_mshutdown_restore_execute()
+static int photon_mshutdown_restore_execute()
 {
     zend_execute_internal = original_zend_execute_internal;
     zend_execute_ex = original_zend_execute_ex;
+
+    return SUCCESS;
 }
 
 PHP_MINFO_FUNCTION(photon)
@@ -183,6 +203,11 @@ PHP_RINIT_FUNCTION(photon)
     // TODO: Init span stack
     // TODO: Set application name & ver, transaction name (auto = request URI)
 
+    // To make runtime changes possible, duplicate these. Otherwise trying to `efree`
+    // the original leads to `zend_mm_heap corrupted`.
+    PHOTON_G(current_application_name) = estrdup(PHOTON_G(application_name));
+    PHOTON_G(current_application_version) = estrdup(PHOTON_G(application_version));
+
     return SUCCESS;
 }
 
@@ -198,6 +223,11 @@ PHP_RSHUTDOWN_FUNCTION(photon)
     return SUCCESS;
 }
 
+PHP_FUNCTION(photon_get_application_name)
+{
+    RETURN_STRING(PHOTON_G(current_application_name));
+}
+
 ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_application_name, 0, 0, 1)
     ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
 ZEND_END_ARG_INFO()
@@ -210,9 +240,23 @@ PHP_FUNCTION(photon_set_application_name)
         Z_PARAM_STR_EX(name, 1, 0)
     ZEND_PARSE_PARAMETERS_END();
 
-    // TODO: Here we should set transaction app name, if it exists
+    if (ZSTR_LEN(name) == 0) {
+        RETURN_FALSE;
+    }
+
+    // TODO: This approach is used in built-in extensions, so I assume it's memory safe
+    if (PHOTON_G(current_application_name)) {
+        efree(PHOTON_G(current_application_name));
+    }
+    PHOTON_G(current_application_name) = estrdup(ZSTR_VAL(name));
+    zend_string_release(name);
 
     RETURN_TRUE;
+}
+
+PHP_FUNCTION(photon_get_application_version)
+{
+    RETURN_STRING(PHOTON_G(current_application_version));
 }
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_application_version, 0, 0, 1)
@@ -227,7 +271,16 @@ PHP_FUNCTION(photon_set_application_version)
         Z_PARAM_STR_EX(version, 1, 0)
     ZEND_PARSE_PARAMETERS_END();
 
-    // TODO: Here we should set transaction app version, if it exists
+    if (ZSTR_LEN(version) == 0) {
+        RETURN_FALSE;
+    }
+
+    // TODO: This approach is used in built-in extensions, so I assume it's memory safe
+    if (PHOTON_G(current_application_version)) {
+        efree(PHOTON_G(current_application_version));
+    }
+    PHOTON_G(current_application_version) = estrdup(ZSTR_VAL(version));
+    zend_string_release(version);
 
     RETURN_TRUE;
 }
@@ -273,7 +326,9 @@ PHP_FUNCTION(photon_set_trace_id)
  * A list of extension's functions exposed to developers.
  */
 static const zend_function_entry photon_functions[] = {
+    PHP_FE(photon_get_application_name,    NULL)
     PHP_FE(photon_set_application_name,    arginfo_photon_set_application_name)
+    PHP_FE(photon_get_application_version, NULL)
     PHP_FE(photon_set_application_version, arginfo_photon_set_application_version)
     PHP_FE(photon_set_transaction_name,    arginfo_photon_set_transaction_name)
     PHP_FE(photon_get_trace_id,            NULL)
