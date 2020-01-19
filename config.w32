@@ -1,0 +1,7 @@
+ARG_ENABLE('photon', 'photon support', 'no');
+
+if (PHP_PHOTON != 'no') {
+	AC_DEFINE('HAVE_PHOTON', 1, 'photon support enabled');
+
+	EXTENSION('photon', 'photon.c', null, '/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1');
+}
