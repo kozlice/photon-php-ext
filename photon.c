@@ -35,7 +35,7 @@ ZEND_DECLARE_MODULE_GLOBALS(photon)
 
 PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("photon.enable",              "1",                              PHP_INI_SYSTEM, OnUpdateBool,   enable,              zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.application_name",    "PHP app",                        PHP_INI_SYSTEM, OnUpdateString, application_name,    zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.application_name",    "PHP application",                PHP_INI_SYSTEM, OnUpdateString, application_name,    zend_photon_globals, photon_globals)
     STD_PHP_INI_ENTRY("photon.application_version", "0.1.0",                          PHP_INI_SYSTEM, OnUpdateString, application_version, zend_photon_globals, photon_globals)
     STD_PHP_INI_ENTRY("photon.agent_transport",     "udp",                            PHP_INI_SYSTEM, OnUpdateString, agent_transport,     zend_photon_globals, photon_globals)
     STD_PHP_INI_ENTRY("photon.agent_host",          PHOTON_AGENT_DEFAULT_HOST,        PHP_INI_SYSTEM, OnUpdateString, agent_host,          zend_photon_globals, photon_globals)
@@ -219,7 +219,7 @@ PHP_RINIT_FUNCTION(photon)
         PHOTON_G(current_transaction_name) = estrdup(SG(request_info).request_uri);
     } else if (strcmp(sapi_module.name, "cli") == 0) {
         // TODO: This is a full file path, resolved in `php_cli.c`. Just script filename should be enough
-        PHOTON_G(current_transaction_name) = estrdup(SG(request_info).path_translated));
+        PHOTON_G(current_transaction_name) = estrdup(SG(request_info).path_translated);
     }
 
     return SUCCESS;
@@ -299,6 +299,11 @@ PHP_FUNCTION(photon_set_application_version)
     RETURN_TRUE;
 }
 
+PHP_FUNCTION(photon_get_transaction_name)
+{
+    RETURN_STRING(PHOTON_G(current_transaction_name));
+}
+
 ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_transaction_name, 0, 0, 1)
     ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
 ZEND_END_ARG_INFO()
@@ -311,7 +316,12 @@ PHP_FUNCTION(photon_set_transaction_name)
         Z_PARAM_STR_EX(name, 1, 0)
     ZEND_PARSE_PARAMETERS_END();
 
-    // TODO: Actually set transaction name (if enabled)
+    // TODO: This approach is used in built-in extensions, so I assume it's memory safe
+    if (PHOTON_G(current_transaction_name)) {
+        efree(PHOTON_G(current_transaction_name));
+    }
+    PHOTON_G(current_transaction_name) = estrdup(ZSTR_VAL(name));
+    zend_string_release(name);
 
     RETURN_TRUE;
 }
@@ -344,6 +354,7 @@ static const zend_function_entry photon_functions[] = {
     PHP_FE(photon_set_application_name,    arginfo_photon_set_application_name)
     PHP_FE(photon_get_application_version, NULL)
     PHP_FE(photon_set_application_version, arginfo_photon_set_application_version)
+    PHP_FE(photon_get_transaction_name,    NULL)
     PHP_FE(photon_set_transaction_name,    arginfo_photon_set_transaction_name)
     PHP_FE(photon_get_trace_id,            NULL)
     PHP_FE(photon_set_trace_id,            arginfo_photon_set_trace_id)
