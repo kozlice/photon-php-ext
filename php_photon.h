@@ -57,11 +57,11 @@ struct agent_connection {
     };
 };
 
-struct transaction_info {
+struct transaction {
     // See https://stackoverflow.com/questions/51053568/generating-a-random-uuid-in-c
     char   id[37];
-    char  *application_name;
-    char  *application_version;
+    char  *app_name;
+    char  *app_version;
     char  *endpoint_name;
     char  *endpoint_mode;
     struct timespec timestamp_start;
@@ -76,8 +76,8 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     zend_bool profiling_cli;
     zend_bool tracing_web;
     zend_bool tracing_cli;
-    char *application_name;
-    char *application_version;
+    char *app_name;
+    char *app_version;
     char *agent_transport;
     char *agent_host;
     long  agent_port;
@@ -87,7 +87,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     struct agent_connection *agent_connection;
 
     // Request-specific: `emalloc` during RINIT and `efree` at RSHUTDOWN
-    struct transaction_info *current_transaction_info;
+    struct transaction *current_transaction;
 
     // TODO: Request stats (memory, CPU & time, trace ID)
     // TODO: Profiling stack/log (class+function, stack depth, execution time + tags)
@@ -127,10 +127,10 @@ PHP_MINFO_FUNCTION(photon);
 PHP_RINIT_FUNCTION(photon);
 PHP_RSHUTDOWN_FUNCTION(photon);
 
-PHP_FUNCTION(photon_get_application_name);
-PHP_FUNCTION(photon_set_application_name);
-PHP_FUNCTION(photon_get_application_version);
-PHP_FUNCTION(photon_set_application_version);
+PHP_FUNCTION(photon_get_app_name);
+PHP_FUNCTION(photon_set_app_name);
+PHP_FUNCTION(photon_get_app_version);
+PHP_FUNCTION(photon_set_app_version);
 PHP_FUNCTION(photon_get_endpoint_name);
 PHP_FUNCTION(photon_set_endpoint_name);
 PHP_FUNCTION(photon_get_trace_id);

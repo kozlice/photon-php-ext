@@ -23,8 +23,8 @@ photon.enable = 1;
 
 ; Your application's name and version.
 ; These can be changed during runtime.
-photon.application_name = "PHP application";
-photon.application_version = "0.1.0";
+photon.app_name = "PHP application";
+photon.app_version = "0.1.0";
 
 ; It is possible to send data to agent over UDP, TCP, or Unix socket.
 ; Possible values for transport are "tcp", "udp" and "unix".

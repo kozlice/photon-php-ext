@@ -34,17 +34,17 @@
 ZEND_DECLARE_MODULE_GLOBALS(photon)
 
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("photon.enable",              "1",                              PHP_INI_SYSTEM, OnUpdateBool,   enable,              zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.application_name",    "php-application",                PHP_INI_SYSTEM, OnUpdateString, application_name,    zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.application_version", "0.1.0",                          PHP_INI_SYSTEM, OnUpdateString, application_version, zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.agent_transport",     "udp",                            PHP_INI_SYSTEM, OnUpdateString, agent_transport,     zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.agent_host",          PHOTON_AGENT_DEFAULT_HOST,        PHP_INI_SYSTEM, OnUpdateString, agent_host,          zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.agent_port",          PHOTON_AGENT_DEFAULT_PORT,        PHP_INI_SYSTEM, OnUpdateLong,   agent_port,          zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.agent_socket_path",   PHOTON_AGENT_DEFAULT_SOCKET_PATH, PHP_INI_SYSTEM, OnUpdateString, agent_socket_path,   zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.profiling_web",       "1",                              PHP_INI_SYSTEM, OnUpdateBool,   profiling_web,       zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.profiling_cli",       "1",                              PHP_INI_SYSTEM, OnUpdateBool,   profiling_cli,       zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.tracing_web",         "1",                              PHP_INI_SYSTEM, OnUpdateBool,   tracing_web,         zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.tracing_cli",         "1",                              PHP_INI_SYSTEM, OnUpdateBool,   tracing_cli,         zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.enable",              "1",                              PHP_INI_SYSTEM, OnUpdateBool,   enable,            zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.app_name",            "php-application",                PHP_INI_SYSTEM, OnUpdateString, app_name,          zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.app_version",         "0.1.0",                          PHP_INI_SYSTEM, OnUpdateString, app_version,       zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.agent_transport",     "udp",                            PHP_INI_SYSTEM, OnUpdateString, agent_transport,   zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.agent_host",          PHOTON_AGENT_DEFAULT_HOST,        PHP_INI_SYSTEM, OnUpdateString, agent_host,        zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.agent_port",          PHOTON_AGENT_DEFAULT_PORT,        PHP_INI_SYSTEM, OnUpdateLong,   agent_port,        zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.agent_socket_path",   PHOTON_AGENT_DEFAULT_SOCKET_PATH, PHP_INI_SYSTEM, OnUpdateString, agent_socket_path, zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiling_web",       "1",                              PHP_INI_SYSTEM, OnUpdateBool,   profiling_web,     zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiling_cli",       "1",                              PHP_INI_SYSTEM, OnUpdateBool,   profiling_cli,     zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.tracing_web",         "1",                              PHP_INI_SYSTEM, OnUpdateBool,   tracing_web,       zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.tracing_cli",         "1",                              PHP_INI_SYSTEM, OnUpdateBool,   tracing_cli,       zend_photon_globals, photon_globals)
     // TODO: Profiling and tracing options
 PHP_INI_END()
 
@@ -277,20 +277,20 @@ PHP_RINIT_FUNCTION(photon)
 
 static int photon_start_transaction()
 {
-    PHOTON_G(current_transaction_info) = emalloc(sizeof(struct transaction_info));
+    PHOTON_G(current_transaction) = emalloc(sizeof(struct transaction));
 
     // TODO: Will the pointer holder be freed properly?
-    struct transaction_info *cti = PHOTON_G(current_transaction_info);
+    struct transaction *ct = PHOTON_G(current_transaction);
 
     // To make runtime changes possible, duplicate these. Otherwise trying to `efree`
     // the original leads to `zend_mm_heap corrupted`.
-    cti->application_name = estrdup(PHOTON_G(application_name));
-    cti->application_version = estrdup(PHOTON_G(application_version));
+    ct->app_name = estrdup(PHOTON_G(app_name));
+    ct->app_version = estrdup(PHOTON_G(app_version));
 
     // Transaction ID
     uuid_t uuid;
     uuid_generate_random(uuid);
-    uuid_unparse_lower(uuid, cti->id);
+    uuid_unparse_lower(uuid, ct->id);
 
     // Mode (web or cli)
     if (
@@ -300,20 +300,20 @@ static int photon_start_transaction()
         strcmp(sapi_module.name, "apache") == 0
     ) {
         // TODO: Should we add host name to transaction data?
-        cti->endpoint_name = estrdup(SG(request_info).request_uri);
+        ct->endpoint_name = estrdup(SG(request_info).request_uri);
         // TODO: Use enum instead?
-        cti->endpoint_mode = estrdup("web");
+        ct->endpoint_mode = estrdup("web");
     } else if (strcmp(sapi_module.name, "cli") == 0) {
         // TODO: This is a full file path, resolved in `php_cli.c`. Just script filename should be enough
-        cti->endpoint_name = estrdup(SG(request_info).path_translated);
+        ct->endpoint_name = estrdup(SG(request_info).path_translated);
         // TODO: Use enum instead?
-        cti->endpoint_mode = estrdup("cli");
+        ct->endpoint_mode = estrdup("cli");
     }
 
     // Timestamp, overall timer, CPU timer
-    clock_gettime(CLOCK_REALTIME, &(cti->timestamp_start));
-    clock_gettime(CLOCK_MONOTONIC, &(cti->monotonic_timer_start));
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &(cti->cpu_timer_start));
+    clock_gettime(CLOCK_REALTIME, &(ct->timestamp_start));
+    clock_gettime(CLOCK_MONOTONIC, &(ct->monotonic_timer_start));
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &(ct->cpu_timer_start));
 
     return SUCCESS;
 }
@@ -337,17 +337,17 @@ static int photon_finish_transaction()
         return SUCCESS;
     }
 
-    struct transaction_info *cti = PHOTON_G(current_transaction_info);
+    struct transaction *ct = PHOTON_G(current_transaction);
 
     struct timespec monotonic_timer_end;
     clock_gettime(CLOCK_MONOTONIC, &monotonic_timer_end);
-    uint64_t monotonic_time_elapsed = timespec_ns_diff(&(cti->monotonic_timer_start), &monotonic_timer_end);
+    uint64_t monotonic_time_elapsed = timespec_ns_diff(&(ct->monotonic_timer_start), &monotonic_timer_end);
 
     struct timespec cpu_timer_end;
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_timer_end);
-    uint64_t cpu_time_elapsed = timespec_ns_diff(&(cti->cpu_timer_start), &cpu_timer_end);
+    uint64_t cpu_time_elapsed = timespec_ns_diff(&(ct->cpu_timer_start), &cpu_timer_end);
 
-    uint64_t timestamp = timespec_to_ns(&(cti->timestamp_start));
+    uint64_t timestamp = timespec_to_ns(&(ct->timestamp_start));
 
     // See http://www.phpinternalsbook.com/php7/internal_types/strings/printing_functions.html
     char *result;
@@ -358,12 +358,12 @@ static int photon_finish_transaction()
         &result, 0,
         // `i` postfix is used in InfluxDB to force integer
         "txn,app=%s,ver=%s,mode=%s,endpoint=%s id=%s,tt=%"PRIu64"i,tc=%"PRIu64"i,mu=%lui,mr=%lui %"PRIu64"\n",
-        cti->application_name,
-        cti->application_version,
+        ct->app_name,
+        ct->app_version,
         // TODO: Use enum instead (reverse map into string)?
-        cti->endpoint_mode,
-        cti->endpoint_name,
-        cti->id,
+        ct->endpoint_mode,
+        ct->endpoint_name,
+        ct->id,
         monotonic_time_elapsed,
         cpu_time_elapsed,
         zend_memory_peak_usage(0),
@@ -376,12 +376,12 @@ static int photon_finish_transaction()
     efree(result);
 
     // Release `char *` properties. Timespecs and UUID will be freed with structure itself.
-    efree(cti->application_name);
-    efree(cti->application_version);
-    efree(cti->endpoint_mode);
-    efree(cti->endpoint_name);
-    efree(cti);
-    PHOTON_G(current_transaction_info) = NULL;
+    efree(ct->app_name);
+    efree(ct->app_version);
+    efree(ct->endpoint_mode);
+    efree(ct->endpoint_name);
+    efree(ct);
+    PHOTON_G(current_transaction) = NULL;
 
     return SUCCESS;
 }
@@ -414,16 +414,16 @@ static int photon_send_to_agent(char *data, size_t length)
     return send(PHOTON_G(agent_connection)->sd, data, length, 0);
 }
 
-PHP_FUNCTION(photon_get_application_name)
+PHP_FUNCTION(photon_get_app_name)
 {
-    RETURN_STRING(PHOTON_G(current_transaction_info)->application_name);
+    RETURN_STRING(PHOTON_G(current_transaction)->app_name);
 }
 
-ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_application_name, 0, 0, 1)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_app_name, 0, 0, 1)
     ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
 ZEND_END_ARG_INFO()
 
-PHP_FUNCTION(photon_set_application_name)
+PHP_FUNCTION(photon_set_app_name)
 {
     zend_string *name = NULL;
 
@@ -436,24 +436,24 @@ PHP_FUNCTION(photon_set_application_name)
     }
 
     // TODO: Should we check for null?
-    struct transaction_info *cti = PHOTON_G(current_transaction_info);
-    efree(cti->application_name);
-    cti->application_name = estrdup(ZSTR_VAL(name));
+    struct transaction *ct = PHOTON_G(current_transaction);
+    efree(ct->app_name);
+    ct->app_name = estrdup(ZSTR_VAL(name));
     zend_string_release(name);
 
     RETURN_TRUE;
 }
 
-PHP_FUNCTION(photon_get_application_version)
+PHP_FUNCTION(photon_get_app_version)
 {
-    RETURN_STRING(PHOTON_G(current_transaction_info)->application_version);
+    RETURN_STRING(PHOTON_G(current_transaction)->app_version);
 }
 
-ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_application_version, 0, 0, 1)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_app_version, 0, 0, 1)
     ZEND_ARG_TYPE_INFO(0, version, IS_STRING, 0)
 ZEND_END_ARG_INFO()
 
-PHP_FUNCTION(photon_set_application_version)
+PHP_FUNCTION(photon_set_app_version)
 {
     zend_string *version = NULL;
 
@@ -466,9 +466,9 @@ PHP_FUNCTION(photon_set_application_version)
     }
 
     // TODO: Should we check for null?
-    struct transaction_info *cti = PHOTON_G(current_transaction_info);
-    efree(cti->application_version);
-    cti->application_version = estrdup(ZSTR_VAL(version));
+    struct transaction *ct = PHOTON_G(current_transaction);
+    efree(ct->app_version);
+    ct->app_version = estrdup(ZSTR_VAL(version));
     zend_string_release(version);
 
     RETURN_TRUE;
@@ -476,7 +476,7 @@ PHP_FUNCTION(photon_set_application_version)
 
 PHP_FUNCTION(photon_get_endpoint_name)
 {
-    RETURN_STRING(PHOTON_G(current_transaction_info)->endpoint_name);
+    RETURN_STRING(PHOTON_G(current_transaction)->endpoint_name);
 }
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_endpoint_name, 0, 0, 1)
@@ -492,9 +492,9 @@ PHP_FUNCTION(photon_set_endpoint_name)
     ZEND_PARSE_PARAMETERS_END();
 
     // TODO: Should we check for null?
-    struct transaction_info *cti = PHOTON_G(current_transaction_info);
-    efree(cti->endpoint_name);
-    cti->endpoint_name = estrdup(ZSTR_VAL(name));
+    struct transaction *ct = PHOTON_G(current_transaction);
+    efree(ct->endpoint_name);
+    ct->endpoint_name = estrdup(ZSTR_VAL(name));
     zend_string_release(name);
 
     RETURN_TRUE;
@@ -502,7 +502,7 @@ PHP_FUNCTION(photon_set_endpoint_name)
 
 PHP_FUNCTION(photon_get_transaction_id)
 {
-    RETURN_STRING(PHOTON_G(current_transaction_info)->id);
+    RETURN_STRING(PHOTON_G(current_transaction)->id);
 }
 
 PHP_FUNCTION(photon_get_trace_id)
@@ -531,10 +531,10 @@ PHP_FUNCTION(photon_set_trace_id)
  * A list of extension's functions exposed to developers.
  */
 static const zend_function_entry photon_functions[] = {
-    PHP_FE(photon_get_application_name,    NULL)
-    PHP_FE(photon_set_application_name,    arginfo_photon_set_application_name)
-    PHP_FE(photon_get_application_version, NULL)
-    PHP_FE(photon_set_application_version, arginfo_photon_set_application_version)
+    PHP_FE(photon_get_app_name,    NULL)
+    PHP_FE(photon_set_app_name,    arginfo_photon_set_app_name)
+    PHP_FE(photon_get_app_version, NULL)
+    PHP_FE(photon_set_app_version, arginfo_photon_set_app_version)
     PHP_FE(photon_get_endpoint_name,    NULL)
     PHP_FE(photon_set_endpoint_name,    arginfo_photon_set_endpoint_name)
     PHP_FE(photon_get_trace_id,            NULL)
