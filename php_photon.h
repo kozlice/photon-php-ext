@@ -70,27 +70,24 @@ struct transaction_info {
 };
 
 ZEND_BEGIN_MODULE_GLOBALS(photon)
+    // Configuration from .ini
     zend_bool enable;
-
     zend_bool profiling_web;
     zend_bool profiling_cli;
-
     zend_bool tracing_web;
     zend_bool tracing_cli;
-
     char *application_name;
     char *application_version;
-
-    // Transaction will be allocated with `emalloc` during RINIT and freed at RSHUTDOWN
-    struct transaction_info *current_transaction_info;
-
     char *agent_transport;
     char *agent_host;
     long  agent_port;
     char *agent_socket_path;
 
-    // Connection will be created using `pemalloc` during MINIT and shared between all requests
+    // Shared between requests: these will be allocated using `pemalloc` during MINIT and `pefree` at MSHUTDOWN
     struct agent_connection *agent_connection;
+
+    // Request-specific: `emalloc` during RINIT and `efree` at RSHUTDOWN
+    struct transaction_info *current_transaction_info;
 
     // TODO: Request stats (memory, CPU & time, trace ID)
     // TODO: Profiling stack/log (class+function, stack depth, execution time + tags)

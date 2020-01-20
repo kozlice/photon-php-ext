@@ -134,7 +134,7 @@ static int photon_connect_to_agent()
         int sd;
         struct sockaddr_in addr;
         // TODO: Replace with `getaddrinfo`, see https://www.kutukupret.com/2009/09/28/gethostbyname-vs-getaddrinfo/
-        // TODO: Should we free this one?
+        // TODO: Put pointer into agent connection structure and free at MSHUTDOWN
         struct hostent *hostname = gethostbyname(PHOTON_G(agent_host));
 
         addr.sin_family = AF_INET;
