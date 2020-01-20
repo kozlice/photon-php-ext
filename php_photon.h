@@ -54,19 +54,21 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     zend_bool tracing_web;
     zend_bool tracing_cli;
 
-    char     *application_name;
-    char     *application_version;
+    char *application_name;
+    char *application_version;
 
-    char     *current_application_name;
-    char     *current_application_version;
-    char     *current_endpoint_name;
-    char     *current_endpoint_mode;
+    char *current_application_name;
+    char *current_application_version;
+    char *current_endpoint_name;
+    char *current_endpoint_mode;
+    struct timespec current_request_start_time;
+    struct timespec current_request_start_cpu_clock;
 
     // TODO: Socket connection itself: need a union for TCP/UDP/Unix
-    char     *agent_transport;
-    char     *agent_host;
-    long      agent_port;
-    char     *agent_socket_path;
+    char *agent_transport;
+    char *agent_host;
+    long  agent_port;
+    char *agent_socket_path;
 
     // TODO: Request stats (memory, CPU & time, trace ID)
     // TODO: Profiling stack/log (class+function, stack depth, execution time + tags)

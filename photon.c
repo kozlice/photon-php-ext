@@ -35,7 +35,7 @@ ZEND_DECLARE_MODULE_GLOBALS(photon)
 
 PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("photon.enable",              "1",                              PHP_INI_SYSTEM, OnUpdateBool,   enable,              zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.application_name",    "PHP application",                PHP_INI_SYSTEM, OnUpdateString, application_name,    zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.application_name",    "php-application",                PHP_INI_SYSTEM, OnUpdateString, application_name,    zend_photon_globals, photon_globals)
     STD_PHP_INI_ENTRY("photon.application_version", "0.1.0",                          PHP_INI_SYSTEM, OnUpdateString, application_version, zend_photon_globals, photon_globals)
     STD_PHP_INI_ENTRY("photon.agent_transport",     "udp",                            PHP_INI_SYSTEM, OnUpdateString, agent_transport,     zend_photon_globals, photon_globals)
     STD_PHP_INI_ENTRY("photon.agent_host",          PHOTON_AGENT_DEFAULT_HOST,        PHP_INI_SYSTEM, OnUpdateString, agent_host,          zend_photon_globals, photon_globals)
@@ -203,6 +203,7 @@ PHP_RINIT_FUNCTION(photon)
     // TODO: Read or create X-Photon-Trace-Id, will be used for tracing
     // TODO: Init span stack
     // TODO: Set application name & ver, transaction name (auto = request URI)
+    // TODO: Split into functions
 
     // To make runtime changes possible, duplicate these. Otherwise trying to `efree`
     // the original leads to `zend_mm_heap corrupted`.
@@ -224,6 +225,9 @@ PHP_RINIT_FUNCTION(photon)
         PHOTON_G(current_endpoint_mode) = estrdup("cli");
     }
 
+    clock_gettime(CLOCK_MONOTONIC, &PHOTON_G(current_request_start_time));
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &PHOTON_G(current_request_start_cpu_clock));
+
     return SUCCESS;
 }
 
@@ -233,8 +237,33 @@ PHP_RSHUTDOWN_FUNCTION(photon)
         return SUCCESS;
     }
 
-    // TODO: Collect & send basic info about transaction
+    // TODO: Collect & send basic info about transaction: wall clock, CPU time, memory usage
     // TODO: Clean up
+    // TODO: Split into functions
+
+    struct timespec current_request_end_time;
+    clock_gettime(CLOCK_MONOTONIC, &current_request_end_time);
+    double current_request_duration =
+        (current_request_end_time.tv_sec - PHOTON_G(current_request_start_time).tv_sec) * 1e3 +
+        (current_request_end_time.tv_nsec - PHOTON_G(current_request_start_time).tv_nsec) / 1e6;
+
+    struct timespec current_request_end_cpu_clock;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &current_request_end_cpu_clock);
+    double current_request_cpu_time =
+        (current_request_end_cpu_clock.tv_sec - PHOTON_G(current_request_start_cpu_clock).tv_sec) * 1e3 +
+        (current_request_end_cpu_clock.tv_nsec - PHOTON_G(current_request_start_cpu_clock).tv_nsec) / 1e6;
+
+    printf(
+        "%s@%s :: %s :: %s - %f ms | %f ms | %zu | %zu\n",
+        PHOTON_G(current_application_name),
+        PHOTON_G(current_application_version),
+        PHOTON_G(current_endpoint_mode),
+        PHOTON_G(current_endpoint_name),
+        current_request_duration,
+        current_request_cpu_time,
+        zend_memory_peak_usage(0),
+        zend_memory_peak_usage(1)
+    );
 
     return SUCCESS;
 }
