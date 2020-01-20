@@ -48,9 +48,14 @@ PHP_INI_BEGIN()
     // TODO: Profiling and tracing options
 PHP_INI_END()
 
-static zend_always_inline uint64_t get_timespec_ns_diff(struct timespec *start, struct timespec *end)
+static zend_always_inline uint64_t timespec_ns_diff(struct timespec *start, struct timespec *end)
 {
-    return (end->tv_sec - start->tv_sec) * 1e9 + (end->tv_nsec - start->tv_nsec);
+    return timespec_to_ns(end) - timespec_to_ns(start);
+}
+
+static zend_always_inline uint64_t timespec_to_ns(struct timespec *ts)
+{
+    return ts->tv_sec * 1e9 + ts->tv_nsec;
 }
 
 static void (*original_zend_execute_ex)(zend_execute_data *execute_data);
@@ -119,17 +124,46 @@ PHP_MINIT_FUNCTION(photon)
 
 static int photon_minit_connect_to_agent()
 {
+    // TODO: Close & free on shutdown!
     // TODO: Create socket connection: must be per-process, not per-thread, yet synced write into buffer is required
     // TODO: On error - disable extension?
-    if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
-        return SUCCESS;
-    }
 
     if (strcmp(PHOTON_G(agent_transport), "tcp") == 0) {
-        return SUCCESS;
-    }
+        // TODO: Handle errors
 
-    if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
+        // TODO: Establish connection
+
+        return SUCCESS;
+    } else if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
+        // TODO: Handle errors
+        int sd;
+        struct sockaddr_in addr;
+
+        sd = socket(AF_INET, SOCK_DGRAM, 0);
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(PHOTON_G(agent_port));
+        addr.sin_addr.s_addr = inet_addr(PHOTON_G(agent_host));
+
+        PHOTON_G(agent_connection).sd = sd;
+        PHOTON_G(agent_connection).addr_in = addr;
+
+//        printf("Socket: %d, host: %s, port: %d\n", PHOTON_G(agent_connection).sd, inet_ntoa(PHOTON_G(agent_connection).addr_in.sin_addr), PHOTON_G(agent_connection).addr_in.sin_port);
+
+        return SUCCESS;
+    } else if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
+        // TODO: Handle errors
+        int sd;
+        struct sockaddr_un addr;
+
+        sd = socket(PF_UNIX, SOCK_STREAM, 0);
+        addr.sun_family = AF_UNIX;
+        memset(&addr, 0, sizeof(addr));
+        strcpy(addr.sun_path, PHOTON_G(agent_socket_path));
+        connect(sd, (struct sockaddr*)&addr, SUN_LEN(&addr));
+
+        PHOTON_G(agent_connection).sd = sd;
+        PHOTON_G(agent_connection).addr_un = addr;
+
         return SUCCESS;
     }
 
@@ -172,6 +206,19 @@ PHP_MSHUTDOWN_FUNCTION(photon)
 static int photon_mshutdown_disconnect_from_agent()
 {
     // TODO: Close socket if open
+
+    if (0 == PHOTON_G(agent_connection).sd) {
+        return SUCCESS;
+    }
+
+    if (strcmp(PHOTON_G(agent_transport), "tcp") == 0) {
+        // TODO: Disconnect from TCP
+    } else if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
+        // TODO: What here?
+    } else if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
+        close(PHOTON_G(agent_connection).sd);
+    }
+
     return SUCCESS;
 }
 
@@ -230,6 +277,7 @@ PHP_RINIT_FUNCTION(photon)
         PHOTON_G(current_mode) = estrdup("cli");
     }
 
+    clock_gettime(CLOCK_REALTIME, &PHOTON_G(current_request_timestamp_start));
     clock_gettime(CLOCK_MONOTONIC, &PHOTON_G(current_request_timer_start));
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &PHOTON_G(current_request_cpu_timer_start));
 
@@ -253,22 +301,29 @@ PHP_RSHUTDOWN_FUNCTION(photon)
 
 static int photon_rshutdown_report_request()
 {
+    if (0 == PHOTON_G(agent_connection).sd) {
+        return SUCCESS;
+    }
+
     struct timespec current_request_timer_end;
     clock_gettime(CLOCK_MONOTONIC, &current_request_timer_end);
-    uint64_t current_request_duration = get_timespec_ns_diff(&PHOTON_G(current_request_timer_start), &current_request_timer_end);
+    uint64_t current_request_duration = timespec_ns_diff(&PHOTON_G(current_request_timer_start), &current_request_timer_end);
 
     struct timespec current_request_cpu_timer_end;
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &current_request_cpu_timer_end);
-    uint64_t current_request_cpu_time = get_timespec_ns_diff(&PHOTON_G(current_request_cpu_timer_start), &current_request_cpu_timer_end);
+    uint64_t current_request_cpu_time = timespec_ns_diff(&PHOTON_G(current_request_cpu_timer_start), &current_request_cpu_timer_end);
+
+    uint64_t timestamp = timespec_to_ns(&PHOTON_G(current_request_timestamp_start));
 
     // See http://www.phpinternalsbook.com/php7/internal_types/strings/printing_functions.html
     char *result;
     int length;
 
+    // TODO: Add request start timestamp
     // TODO: Strings with spaces need to be escaped
     length = spprintf(
         &result, 0,
-        "txn,app=%s,ver=%s,mode=%s,endpoint=%s tt=%"PRIu64"i,tc=%"PRIu64"i,mu=%lu,mr=%lu\n",
+        "txn,app=%s,ver=%s,mode=%s,endpoint=%s tt=%"PRIu64"i,tc=%"PRIu64"i,mu=%lu,mr=%lu %"PRIu64,
         PHOTON_G(current_application_name),
         PHOTON_G(current_application_version),
         PHOTON_G(current_mode),
@@ -276,12 +331,46 @@ static int photon_rshutdown_report_request()
         current_request_duration,
         current_request_cpu_time,
         zend_memory_peak_usage(0),
-        zend_memory_peak_usage(1)
+        zend_memory_peak_usage(1),
+        timestamp
     );
 
+    send_to_agent(result, length);
     efree(result);
 
     return SUCCESS;
+}
+
+static int send_to_agent(char *data, size_t length)
+{
+    if (0 == PHOTON_G(agent_connection).sd) {
+        return -1;
+    }
+
+    if (strcmp(PHOTON_G(agent_transport), "tcp") == 0) {
+        // TODO: ?
+
+        return 0;
+    }
+
+    if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
+        // TODO: Handle error
+        return sendto(
+            PHOTON_G(agent_connection).sd,
+            data,
+            length + 1,
+            0,
+            (struct sockaddr*)&PHOTON_G(agent_connection).addr_in,
+            sizeof(PHOTON_G(agent_connection).addr_in)
+        );
+    }
+
+    if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
+        // TODO: Handle error
+        return send(PHOTON_G(agent_connection).sd, data, length, 0);
+    }
+
+    return -1;
 }
 
 PHP_FUNCTION(photon_get_application_name)

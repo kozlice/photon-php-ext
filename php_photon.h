@@ -25,6 +25,8 @@
 #include <sys/un.h>
 #include <time.h>
 #include <inttypes.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 
 #include <uuid/uuid.h>
 
@@ -38,13 +40,21 @@ extern zend_module_entry photon_module_entry;
 ZEND_TSRMLS_CACHE_EXTERN()
 #endif
 
-#define PHOTON_AGENT_DEFAULT_HOST "localhost"
+#define PHOTON_AGENT_DEFAULT_HOST "127.0.0.1"
 // During .ini parsing it will be converted into long, but input must be string
 #define PHOTON_AGENT_DEFAULT_PORT "8989"
 #define PHOTON_AGENT_DEFAULT_SOCKET_PATH "/var/run/photon-agent.sock"
 
 // TODO: Macros for intercepting functions and class methods
 // TODO: Structs for holding request basic info and detailed report
+// TODO: Destructor for this one
+struct agent_connection {
+    int sd;
+    union {
+        struct sockaddr_in addr_in;
+        struct sockaddr_un addr_un;
+    };
+};
 
 ZEND_BEGIN_MODULE_GLOBALS(photon)
     zend_bool enable;
@@ -62,6 +72,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     char *current_application_version;
     char *current_endpoint_name;
     char *current_mode;
+    struct timespec current_request_timestamp_start;
     struct timespec current_request_timer_start;
     struct timespec current_request_cpu_timer_start;
 
@@ -70,6 +81,8 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     char *agent_host;
     long  agent_port;
     char *agent_socket_path;
+
+    struct agent_connection agent_connection;
 
     // TODO: Request stats (memory, CPU & time, trace ID)
     // TODO: Profiling stack/log (class+function, stack depth, execution time + tags)
@@ -88,7 +101,8 @@ ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute
 ZEND_API void photon_execute_internal(zend_execute_data *execute_data, zval *return_value);
 ZEND_API void photon_execute_ex (zend_execute_data *execute_data);
 
-static zend_always_inline uint64_t get_timespec_diff(struct timespec *start, struct timespec *end);
+static zend_always_inline uint64_t timespec_to_ns(struct timespec *ts);
+static zend_always_inline uint64_t timespec_ns_diff(struct timespec *start, struct timespec *end);
 
 static int photon_minit_connect_to_agent();
 static int photon_minit_configure_interceptors();
@@ -98,6 +112,8 @@ static int photon_mshutdown_disconnect_from_agent();
 static int photon_mshutdown_restore_execute();
 
 static int photon_rshutdown_report_request();
+
+static int send_to_agent(char *data, size_t length);
 
 PHP_MINIT_FUNCTION(photon);
 PHP_MSHUTDOWN_FUNCTION(photon);
