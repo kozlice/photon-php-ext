@@ -60,6 +60,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     char     *current_application_name;
     char     *current_application_version;
     char     *current_endpoint_name;
+    char     *current_endpoint_mode;
 
     // TODO: Socket connection itself: need a union for TCP/UDP/Unix
     char     *agent_transport;

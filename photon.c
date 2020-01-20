@@ -217,9 +217,11 @@ PHP_RINIT_FUNCTION(photon)
     ) {
         // TODO: Should we add host name to transaction data?
         PHOTON_G(current_endpoint_name) = estrdup(SG(request_info).request_uri);
+        PHOTON_G(current_endpoint_mode) = estrdup("web");
     } else if (strcmp(sapi_module.name, "cli") == 0) {
         // TODO: This is a full file path, resolved in `php_cli.c`. Just script filename should be enough
         PHOTON_G(current_endpoint_name) = estrdup(SG(request_info).path_translated);
+        PHOTON_G(current_endpoint_mode) = estrdup("cli");
     }
 
     return SUCCESS;
