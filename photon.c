@@ -270,22 +270,27 @@ PHP_RINIT_FUNCTION(photon)
     // TODO: Capture request start time and transaction name (URI or filename)
     // TODO: Read or create X-Photon-Trace-Id, will be used for tracing
     // TODO: Init span stack
-    photon_init_transaction_info();
+    photon_start_transaction();
 
     return SUCCESS;
 }
 
-static int photon_init_transaction_info()
+static int photon_start_transaction()
 {
+    PHOTON_G(current_transaction_info) = emalloc(sizeof(struct transaction_info));
+
+    // TODO: Will the pointer holder be freed properly?
+    struct transaction_info *cti = PHOTON_G(current_transaction_info);
+
     // To make runtime changes possible, duplicate these. Otherwise trying to `efree`
     // the original leads to `zend_mm_heap corrupted`.
-    PHOTON_G(current_application_name) = estrdup(PHOTON_G(application_name));
-    PHOTON_G(current_application_version) = estrdup(PHOTON_G(application_version));
+    cti->application_name = estrdup(PHOTON_G(application_name));
+    cti->application_version = estrdup(PHOTON_G(application_version));
 
     // Transaction ID
     uuid_t uuid;
     uuid_generate_random(uuid);
-    uuid_unparse_lower(uuid, PHOTON_G(current_transaction_id));
+    uuid_unparse_lower(uuid, cti->id);
 
     // Mode (web or cli)
     if (
@@ -295,18 +300,20 @@ static int photon_init_transaction_info()
         strcmp(sapi_module.name, "apache") == 0
     ) {
         // TODO: Should we add host name to transaction data?
-        PHOTON_G(current_endpoint_name) = estrdup(SG(request_info).request_uri);
-        PHOTON_G(current_mode) = estrdup("web");
+        cti->endpoint_name = estrdup(SG(request_info).request_uri);
+        // TODO: Use enum instead?
+        cti->endpoint_mode = estrdup("web");
     } else if (strcmp(sapi_module.name, "cli") == 0) {
         // TODO: This is a full file path, resolved in `php_cli.c`. Just script filename should be enough
-        PHOTON_G(current_endpoint_name) = estrdup(SG(request_info).path_translated);
-        PHOTON_G(current_mode) = estrdup("cli");
+        cti->endpoint_name = estrdup(SG(request_info).path_translated);
+        // TODO: Use enum instead?
+        cti->endpoint_mode = estrdup("cli");
     }
 
     // Timestamp, overall timer, CPU timer
-    clock_gettime(CLOCK_REALTIME, &PHOTON_G(current_request_timestamp_start));
-    clock_gettime(CLOCK_MONOTONIC, &PHOTON_G(current_request_timer_start));
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &PHOTON_G(current_request_cpu_timer_start));
+    clock_gettime(CLOCK_REALTIME, &(cti->timestamp_start));
+    clock_gettime(CLOCK_MONOTONIC, &(cti->monotonic_timer_start));
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &(cti->cpu_timer_start));
 
     return SUCCESS;
 }
@@ -318,27 +325,29 @@ PHP_RSHUTDOWN_FUNCTION(photon)
     }
 
     // TODO: Free profiling / tracing info
-    photon_report_transaction_info();
+    photon_finish_transaction();
 
     return SUCCESS;
 }
 
-static int photon_report_transaction_info()
+static int photon_finish_transaction()
 {
     // TODO: Is this condition needed?
     if (0 == PHOTON_G(enable)) {
         return SUCCESS;
     }
 
-    struct timespec current_request_timer_end;
-    clock_gettime(CLOCK_MONOTONIC, &current_request_timer_end);
-    uint64_t current_request_duration = timespec_ns_diff(&PHOTON_G(current_request_timer_start), &current_request_timer_end);
+    struct transaction_info *cti = PHOTON_G(current_transaction_info);
 
-    struct timespec current_request_cpu_timer_end;
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &current_request_cpu_timer_end);
-    uint64_t current_request_cpu_time = timespec_ns_diff(&PHOTON_G(current_request_cpu_timer_start), &current_request_cpu_timer_end);
+    struct timespec monotonic_timer_end;
+    clock_gettime(CLOCK_MONOTONIC, &monotonic_timer_end);
+    uint64_t monotonic_time_elapsed = timespec_ns_diff(&(cti->monotonic_timer_start), &monotonic_timer_end);
 
-    uint64_t timestamp = timespec_to_ns(&PHOTON_G(current_request_timestamp_start));
+    struct timespec cpu_timer_end;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_timer_end);
+    uint64_t cpu_time_elapsed = timespec_ns_diff(&(cti->cpu_timer_start), &cpu_timer_end);
+
+    uint64_t timestamp = timespec_to_ns(&(cti->timestamp_start));
 
     // See http://www.phpinternalsbook.com/php7/internal_types/strings/printing_functions.html
     char *result;
@@ -349,13 +358,14 @@ static int photon_report_transaction_info()
         &result, 0,
         // `i` postfix is used in InfluxDB to force integer
         "txn,app=%s,ver=%s,mode=%s,endpoint=%s id=%s,tt=%"PRIu64"i,tc=%"PRIu64"i,mu=%lui,mr=%lui %"PRIu64"\n",
-        PHOTON_G(current_application_name),
-        PHOTON_G(current_application_version),
-        PHOTON_G(current_mode),
-        PHOTON_G(current_endpoint_name),
-        PHOTON_G(current_transaction_id),
-        current_request_duration,
-        current_request_cpu_time,
+        cti->application_name,
+        cti->application_version,
+        // TODO: Use enum instead (reverse map into string)?
+        cti->endpoint_mode,
+        cti->endpoint_name,
+        cti->id,
+        monotonic_time_elapsed,
+        cpu_time_elapsed,
         zend_memory_peak_usage(0),
         zend_memory_peak_usage(1),
         timestamp
@@ -365,11 +375,13 @@ static int photon_report_transaction_info()
 
     efree(result);
 
-    // Only release `char *` properties. Do not free timespecs and txn ID, they are overwritten properly.
-    efree(PHOTON_G(current_application_name));
-    efree(PHOTON_G(current_application_version));
-    efree(PHOTON_G(current_mode));
-    efree(PHOTON_G(current_endpoint_name));
+    // Release `char *` properties. Timespecs and UUID will be freed with structure itself.
+    efree(cti->application_name);
+    efree(cti->application_version);
+    efree(cti->endpoint_mode);
+    efree(cti->endpoint_name);
+    efree(cti);
+    PHOTON_G(current_transaction_info) = NULL;
 
     return SUCCESS;
 }
@@ -380,6 +392,10 @@ static int photon_send_to_agent(char *data, size_t length)
     if (0 == PHOTON_G(enable)) {
         return -1;
     }
+
+    // Note that sender may buffer data in order to optimize performance.
+    // We're okay with it, agent is capable of splitting messages.
+    // See https://stackoverflow.com/questions/8421848/send-data-in-separate-tcp-segments-without-being-merged-by-the-tcp-stack
 
     if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
         // TODO: Handle error
@@ -400,7 +416,7 @@ static int photon_send_to_agent(char *data, size_t length)
 
 PHP_FUNCTION(photon_get_application_name)
 {
-    RETURN_STRING(PHOTON_G(current_application_name));
+    RETURN_STRING(PHOTON_G(current_transaction_info)->application_name);
 }
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_application_name, 0, 0, 1)
@@ -419,11 +435,10 @@ PHP_FUNCTION(photon_set_application_name)
         RETURN_FALSE;
     }
 
-    // TODO: This approach is used in built-in extensions, so I assume it's memory safe
-    if (PHOTON_G(current_application_name)) {
-        efree(PHOTON_G(current_application_name));
-    }
-    PHOTON_G(current_application_name) = estrdup(ZSTR_VAL(name));
+    // TODO: Should we check for null?
+    struct transaction_info *cti = PHOTON_G(current_transaction_info);
+    efree(cti->application_name);
+    cti->application_name = estrdup(ZSTR_VAL(name));
     zend_string_release(name);
 
     RETURN_TRUE;
@@ -431,7 +446,7 @@ PHP_FUNCTION(photon_set_application_name)
 
 PHP_FUNCTION(photon_get_application_version)
 {
-    RETURN_STRING(PHOTON_G(current_application_version));
+    RETURN_STRING(PHOTON_G(current_transaction_info)->application_version);
 }
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_application_version, 0, 0, 1)
@@ -450,11 +465,10 @@ PHP_FUNCTION(photon_set_application_version)
         RETURN_FALSE;
     }
 
-    // TODO: This approach is used in built-in extensions, so I assume it's memory safe
-    if (PHOTON_G(current_application_version)) {
-        efree(PHOTON_G(current_application_version));
-    }
-    PHOTON_G(current_application_version) = estrdup(ZSTR_VAL(version));
+    // TODO: Should we check for null?
+    struct transaction_info *cti = PHOTON_G(current_transaction_info);
+    efree(cti->application_version);
+    cti->application_version = estrdup(ZSTR_VAL(version));
     zend_string_release(version);
 
     RETURN_TRUE;
@@ -462,7 +476,7 @@ PHP_FUNCTION(photon_set_application_version)
 
 PHP_FUNCTION(photon_get_endpoint_name)
 {
-    RETURN_STRING(PHOTON_G(current_endpoint_name));
+    RETURN_STRING(PHOTON_G(current_transaction_info)->endpoint_name);
 }
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_endpoint_name, 0, 0, 1)
@@ -477,14 +491,18 @@ PHP_FUNCTION(photon_set_endpoint_name)
         Z_PARAM_STR_EX(name, 1, 0)
     ZEND_PARSE_PARAMETERS_END();
 
-    // TODO: This approach is used in built-in extensions, so I assume it's memory safe
-    if (PHOTON_G(current_endpoint_name)) {
-        efree(PHOTON_G(current_endpoint_name));
-    }
-    PHOTON_G(current_endpoint_name) = estrdup(ZSTR_VAL(name));
+    // TODO: Should we check for null?
+    struct transaction_info *cti = PHOTON_G(current_transaction_info);
+    efree(cti->endpoint_name);
+    cti->endpoint_name = estrdup(ZSTR_VAL(name));
     zend_string_release(name);
 
     RETURN_TRUE;
+}
+
+PHP_FUNCTION(photon_get_transaction_id)
+{
+    RETURN_STRING(PHOTON_G(current_transaction_info)->id);
 }
 
 PHP_FUNCTION(photon_get_trace_id)
@@ -503,6 +521,8 @@ PHP_FUNCTION(photon_set_trace_id)
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_STR_EX(id, 1, 0)
     ZEND_PARSE_PARAMETERS_END();
+
+    // TODO: Set it
 
     RETURN_TRUE;
 }

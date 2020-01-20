@@ -57,6 +57,18 @@ struct agent_connection {
     };
 };
 
+struct transaction_info {
+    // See https://stackoverflow.com/questions/51053568/generating-a-random-uuid-in-c
+    char   id[37];
+    char  *application_name;
+    char  *application_version;
+    char  *endpoint_name;
+    char  *endpoint_mode;
+    struct timespec timestamp_start;
+    struct timespec monotonic_timer_start;
+    struct timespec cpu_timer_start;
+};
+
 ZEND_BEGIN_MODULE_GLOBALS(photon)
     zend_bool enable;
 
@@ -69,19 +81,9 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     char *application_name;
     char *application_version;
 
-    // TODO: Move all request info into a structure `current_transaction_info` and drop `current(_request)` prefix
-    // TODO: Will need a destructor to clean `char *`
-    char  *current_application_name;
-    char  *current_application_version;
-    char  *current_endpoint_name;
-    char  *current_mode;
-    struct timespec current_request_timestamp_start;
-    struct timespec current_request_timer_start;
-    struct timespec current_request_cpu_timer_start;
-    // See https://stackoverflow.com/questions/51053568/generating-a-random-uuid-in-c
-    char   current_transaction_id[37];
+    // Transaction will be allocated with `emalloc` during RINIT and freed at RSHUTDOWN
+    struct transaction_info *current_transaction_info;
 
-    // TODO: Socket connection itself: need a union for TCP/UDP/Unix
     char *agent_transport;
     char *agent_host;
     long  agent_port;
@@ -118,8 +120,8 @@ static int photon_disconnect_from_agent();
 static int photon_restore_execute();
 
 static int photon_send_to_agent(char *data, size_t length);
-static int photon_init_transaction_info();
-static int photon_report_transaction_info();
+static int photon_start_transaction();
+static int photon_finish_transaction();
 
 PHP_MINIT_FUNCTION(photon);
 PHP_MSHUTDOWN_FUNCTION(photon);
