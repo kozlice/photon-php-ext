@@ -218,11 +218,11 @@ PHP_RINIT_FUNCTION(photon)
     ) {
         // TODO: Should we add host name to transaction data?
         PHOTON_G(current_endpoint_name) = estrdup(SG(request_info).request_uri);
-        PHOTON_G(current_endpoint_mode) = estrdup("web");
+        PHOTON_G(current_mode) = estrdup("web");
     } else if (strcmp(sapi_module.name, "cli") == 0) {
         // TODO: This is a full file path, resolved in `php_cli.c`. Just script filename should be enough
         PHOTON_G(current_endpoint_name) = estrdup(SG(request_info).path_translated);
-        PHOTON_G(current_endpoint_mode) = estrdup("cli");
+        PHOTON_G(current_mode) = estrdup("cli");
     }
 
     clock_gettime(CLOCK_MONOTONIC, &PHOTON_G(current_request_start_time));
@@ -243,21 +243,21 @@ PHP_RSHUTDOWN_FUNCTION(photon)
 
     struct timespec current_request_end_time;
     clock_gettime(CLOCK_MONOTONIC, &current_request_end_time);
-    double current_request_duration =
-        (current_request_end_time.tv_sec - PHOTON_G(current_request_start_time).tv_sec) * 1e3 +
-        (current_request_end_time.tv_nsec - PHOTON_G(current_request_start_time).tv_nsec) / 1e6;
+    uint64_t current_request_duration =
+        (current_request_end_time.tv_sec - PHOTON_G(current_request_start_time).tv_sec) * 1e9 +
+        (current_request_end_time.tv_nsec - PHOTON_G(current_request_start_time).tv_nsec);
 
     struct timespec current_request_end_cpu_clock;
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &current_request_end_cpu_clock);
-    double current_request_cpu_time =
-        (current_request_end_cpu_clock.tv_sec - PHOTON_G(current_request_start_cpu_clock).tv_sec) * 1e3 +
-        (current_request_end_cpu_clock.tv_nsec - PHOTON_G(current_request_start_cpu_clock).tv_nsec) / 1e6;
+    uint64_t current_request_cpu_time =
+        (current_request_end_cpu_clock.tv_sec - PHOTON_G(current_request_start_cpu_clock).tv_sec) * 1e9 +
+        (current_request_end_cpu_clock.tv_nsec - PHOTON_G(current_request_start_cpu_clock).tv_nsec);
 
     printf(
-        "%s@%s :: %s :: %s - %f ms | %f ms | %zu | %zu\n",
+        "txn,app=%s,ver=%s,mode=%s,endpoint=%s tt=%"PRIu64"i,tc=%"PRIu64"i,mu=%lu,mr=%lu\n",
         PHOTON_G(current_application_name),
         PHOTON_G(current_application_version),
-        PHOTON_G(current_endpoint_mode),
+        PHOTON_G(current_mode),
         PHOTON_G(current_endpoint_name),
         current_request_duration,
         current_request_cpu_time,

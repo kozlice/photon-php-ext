@@ -24,6 +24,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <time.h>
+#include <inttypes.h>
 
 #include <uuid/uuid.h>
 
@@ -60,7 +61,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     char *current_application_name;
     char *current_application_version;
     char *current_endpoint_name;
-    char *current_endpoint_mode;
+    char *current_mode;
     struct timespec current_request_start_time;
     struct timespec current_request_start_cpu_clock;
 
