@@ -47,7 +47,8 @@ ZEND_TSRMLS_CACHE_EXTERN()
 
 // TODO: Macros for intercepting functions and class methods
 // TODO: Structs for holding request basic info and detailed report
-// TODO: Destructor for this one
+
+// TODO: Need to free this in MSHUTDOWN
 struct agent_connection {
     int sd;
     union {
@@ -69,13 +70,16 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     char *application_version;
 
     // TODO: Move all request info into a structure `current_transaction_info` and drop `current(_request)` prefix
-    char *current_application_name;
-    char *current_application_version;
-    char *current_endpoint_name;
-    char *current_mode;
+    // TODO: Will need to free said structure in RSHUTDOWN
+    char  *current_application_name;
+    char  *current_application_version;
+    char  *current_endpoint_name;
+    char  *current_mode;
     struct timespec current_request_timestamp_start;
     struct timespec current_request_timer_start;
     struct timespec current_request_cpu_timer_start;
+    // See https://stackoverflow.com/questions/51053568/generating-a-random-uuid-in-c
+    char   current_transaction_id[37];
 
     // TODO: Socket connection itself: need a union for TCP/UDP/Unix
     char *agent_transport;
@@ -113,6 +117,7 @@ static int photon_disconnect_from_agent();
 static int photon_restore_execute();
 
 static int photon_send_to_agent(char *data, size_t length);
+static int photon_init_transaction_info();
 static int photon_report_transaction_info();
 
 PHP_MINIT_FUNCTION(photon);

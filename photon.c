@@ -265,13 +265,24 @@ PHP_RINIT_FUNCTION(photon)
     // TODO: Capture request start time and transaction name (URI or filename)
     // TODO: Read or create X-Photon-Trace-Id, will be used for tracing
     // TODO: Init span stack
-    // TODO: Split into functions
+    photon_init_transaction_info();
 
+    return SUCCESS;
+}
+
+static int photon_init_transaction_info()
+{
     // To make runtime changes possible, duplicate these. Otherwise trying to `efree`
     // the original leads to `zend_mm_heap corrupted`.
     PHOTON_G(current_application_name) = estrdup(PHOTON_G(application_name));
     PHOTON_G(current_application_version) = estrdup(PHOTON_G(application_version));
 
+    // Transaction ID
+    uuid_t uuid;
+    uuid_generate_random(uuid);
+    uuid_unparse_lower(uuid, PHOTON_G(current_transaction_id));
+
+    // Mode (web or cli)
     if (
         strcmp(sapi_module.name, "fpm-fcgi") == 0 ||
         strcmp(sapi_module.name, "cli-server") == 0 ||
@@ -287,6 +298,7 @@ PHP_RINIT_FUNCTION(photon)
         PHOTON_G(current_mode) = estrdup("cli");
     }
 
+    // Timestamp, overall timer, CPU timer
     clock_gettime(CLOCK_REALTIME, &PHOTON_G(current_request_timestamp_start));
     clock_gettime(CLOCK_MONOTONIC, &PHOTON_G(current_request_timer_start));
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &PHOTON_G(current_request_cpu_timer_start));
@@ -330,11 +342,12 @@ static int photon_report_transaction_info()
     // TODO: Spaces in strings must be escaped
     length = spprintf(
         &result, 0,
-        "txn,app=%s,ver=%s,mode=%s,endpoint=%s tt=%"PRIu64"i,tc=%"PRIu64"i,mu=%lu,mr=%lu %"PRIu64,
+        "txn,app=%s,ver=%s,mode=%s,endpoint=%s id=%s,tt=%"PRIu64"i,tc=%"PRIu64"i,mu=%lu,mr=%lu %"PRIu64"\n",
         PHOTON_G(current_application_name),
         PHOTON_G(current_application_version),
         PHOTON_G(current_mode),
         PHOTON_G(current_endpoint_name),
+        PHOTON_G(current_transaction_id),
         current_request_duration,
         current_request_cpu_time,
         zend_memory_peak_usage(0),
