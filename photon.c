@@ -115,14 +115,14 @@ PHP_MINIT_FUNCTION(photon)
         return SUCCESS;
     }
 
-    photon_minit_connect_to_agent();
-    photon_minit_configure_interceptors();
-    photon_minit_override_execute();
+    photon_connect_to_agent();
+    photon_configure_interceptors();
+    photon_override_execute();
 
     return SUCCESS;
 }
 
-static int photon_minit_connect_to_agent()
+static int photon_connect_to_agent()
 {
     // TODO: Close & free on shutdown!
     // TODO: Create socket connection: must be per-process, not per-thread, yet synced write into buffer is required
@@ -171,13 +171,13 @@ static int photon_minit_connect_to_agent()
     return FAILURE;
 }
 
-static int photon_minit_configure_interceptors()
+static int photon_configure_interceptors()
 {
     // TODO: Configure interceptors for internal & userland functions
     return SUCCESS;
 }
 
-static int photon_minit_override_execute()
+static int photon_override_execute()
 {
     // Overload VM execution functions. This allows custom tracing/profiling
     original_zend_execute_internal = zend_execute_internal;
@@ -197,22 +197,21 @@ PHP_MSHUTDOWN_FUNCTION(photon)
     }
 
     // TODO: Free memory - release interceptors, cleanup all other stuff
-    photon_mshutdown_restore_execute();
-    photon_mshutdown_disconnect_from_agent();
+    photon_restore_execute();
+    photon_disconnect_from_agent();
 
     return SUCCESS;
 }
 
-static int photon_mshutdown_disconnect_from_agent()
+static int photon_disconnect_from_agent()
 {
-    // TODO: Close socket if open
-
-    if (0 == PHOTON_G(agent_connection).sd) {
+    // TODO: Is this condition needed?
+    if (0 == PHOTON_G(enable)) {
         return SUCCESS;
     }
 
     if (strcmp(PHOTON_G(agent_transport), "tcp") == 0) {
-        // TODO: Disconnect from TCP
+        // TODO: What here?
     } else if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
         // TODO: What here?
     } else if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
@@ -222,7 +221,7 @@ static int photon_mshutdown_disconnect_from_agent()
     return SUCCESS;
 }
 
-static int photon_mshutdown_restore_execute()
+static int photon_restore_execute()
 {
     zend_execute_internal = original_zend_execute_internal;
     zend_execute_ex = original_zend_execute_ex;
@@ -254,7 +253,6 @@ PHP_RINIT_FUNCTION(photon)
     // TODO: Capture request start time and transaction name (URI or filename)
     // TODO: Read or create X-Photon-Trace-Id, will be used for tracing
     // TODO: Init span stack
-    // TODO: Set application name & ver, transaction name (auto = request URI)
     // TODO: Split into functions
 
     // To make runtime changes possible, duplicate these. Otherwise trying to `efree`
@@ -290,18 +288,16 @@ PHP_RSHUTDOWN_FUNCTION(photon)
         return SUCCESS;
     }
 
-    // TODO: Collect & send basic info about transaction: wall clock, CPU time, memory usage
-    // TODO: Clean up
-    // TODO: Split into functions
-
-    photon_rshutdown_report_request();
+    // TODO: Free profiling / tracing info
+    photon_report_transaction_info();
 
     return SUCCESS;
 }
 
-static int photon_rshutdown_report_request()
+static int photon_report_transaction_info()
 {
-    if (0 == PHOTON_G(agent_connection).sd) {
+    // TODO: Is this condition needed?
+    if (0 == PHOTON_G(enable)) {
         return SUCCESS;
     }
 
@@ -319,8 +315,7 @@ static int photon_rshutdown_report_request()
     char *result;
     int length;
 
-    // TODO: Add request start timestamp
-    // TODO: Strings with spaces need to be escaped
+    // TODO: Spaces in strings must be escaped
     length = spprintf(
         &result, 0,
         "txn,app=%s,ver=%s,mode=%s,endpoint=%s tt=%"PRIu64"i,tc=%"PRIu64"i,mu=%lu,mr=%lu %"PRIu64,
@@ -335,15 +330,17 @@ static int photon_rshutdown_report_request()
         timestamp
     );
 
-    send_to_agent(result, length);
+    int rc = photon_send_to_agent(result, length);
+
     efree(result);
 
     return SUCCESS;
 }
 
-static int send_to_agent(char *data, size_t length)
+static int photon_send_to_agent(char *data, size_t length)
 {
-    if (0 == PHOTON_G(agent_connection).sd) {
+    // TODO: Is this condition needed?
+    if (0 == PHOTON_G(enable)) {
         return -1;
     }
 

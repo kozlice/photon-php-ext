@@ -104,16 +104,15 @@ ZEND_API void photon_execute_ex (zend_execute_data *execute_data);
 static zend_always_inline uint64_t timespec_to_ns(struct timespec *ts);
 static zend_always_inline uint64_t timespec_ns_diff(struct timespec *start, struct timespec *end);
 
-static int photon_minit_connect_to_agent();
-static int photon_minit_configure_interceptors();
-static int photon_minit_override_execute();
+static int photon_connect_to_agent();
+static int photon_configure_interceptors();
+static int photon_override_execute();
 
-static int photon_mshutdown_disconnect_from_agent();
-static int photon_mshutdown_restore_execute();
+static int photon_disconnect_from_agent();
+static int photon_restore_execute();
 
-static int photon_rshutdown_report_request();
-
-static int send_to_agent(char *data, size_t length);
+static int photon_send_to_agent(char *data, size_t length);
+static int photon_report_transaction_info();
 
 PHP_MINIT_FUNCTION(photon);
 PHP_MSHUTDOWN_FUNCTION(photon);
