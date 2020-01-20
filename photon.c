@@ -123,6 +123,8 @@ PHP_MINIT_FUNCTION(photon)
 
 static int photon_connect_to_agent()
 {
+    PHOTON_G(agent_connection) = pemalloc(sizeof(struct agent_connection), 1);
+
     // TODO: Close & free on shutdown!
     // TODO: On error - disable extension?
     // TODO: Refactor: too much similar code
@@ -141,8 +143,8 @@ static int photon_connect_to_agent()
         sd = socket(AF_INET, SOCK_STREAM, 0);
         connect(sd, (struct sockaddr*)&addr, sizeof(addr));
 
-        PHOTON_G(agent_connection).sd = sd;
-        PHOTON_G(agent_connection).addr_in = addr;
+        PHOTON_G(agent_connection)->sd = sd;
+        PHOTON_G(agent_connection)->addr_in = addr;
 
         return SUCCESS;
     } else if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
@@ -155,8 +157,8 @@ static int photon_connect_to_agent()
         addr.sin_addr.s_addr = inet_addr(PHOTON_G(agent_host));
         sd = socket(AF_INET, SOCK_DGRAM, 0);
 
-        PHOTON_G(agent_connection).sd = sd;
-        PHOTON_G(agent_connection).addr_in = addr;
+        PHOTON_G(agent_connection)->sd = sd;
+        PHOTON_G(agent_connection)->addr_in = addr;
 
         return SUCCESS;
     } else if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
@@ -171,8 +173,8 @@ static int photon_connect_to_agent()
         // For SUN_LEN see https://unix.superglobalmegacorp.com/Net2/newsrc/sys/un.h.html
         connect(sd, (struct sockaddr*)&addr, SUN_LEN(&addr));
 
-        PHOTON_G(agent_connection).sd = sd;
-        PHOTON_G(agent_connection).addr_un = addr;
+        PHOTON_G(agent_connection)->sd = sd;
+        PHOTON_G(agent_connection)->addr_un = addr;
 
         return SUCCESS;
     }
@@ -206,7 +208,7 @@ PHP_MSHUTDOWN_FUNCTION(photon)
         return SUCCESS;
     }
 
-    // TODO: Free memory - release interceptors, cleanup all other stuff
+    // TODO: Release interceptors, cleanup tracing / profiling structures
     photon_restore_execute();
     photon_disconnect_from_agent();
 
@@ -220,7 +222,7 @@ static int photon_disconnect_from_agent()
         return SUCCESS;
     }
 
-    close(PHOTON_G(agent_connection).sd);
+    close(PHOTON_G(agent_connection)->sd);
 
     if (strcmp(PHOTON_G(agent_transport), "tcp") == 0) {
         // TODO: Anything specific here?
@@ -229,6 +231,9 @@ static int photon_disconnect_from_agent()
     } else if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
         // TODO: Anything specific here?
     }
+
+    // TODO: Do we need to take care of sockaddr inside?
+    pefree(PHOTON_G(agent_connection), 1);
 
     return SUCCESS;
 }
@@ -342,7 +347,8 @@ static int photon_report_transaction_info()
     // TODO: Spaces in strings must be escaped
     length = spprintf(
         &result, 0,
-        "txn,app=%s,ver=%s,mode=%s,endpoint=%s id=%s,tt=%"PRIu64"i,tc=%"PRIu64"i,mu=%lu,mr=%lu %"PRIu64"\n",
+        // `i` postfix is used in InfluxDB to force integer
+        "txn,app=%s,ver=%s,mode=%s,endpoint=%s id=%s,tt=%"PRIu64"i,tc=%"PRIu64"i,mu=%lui,mr=%lui %"PRIu64"\n",
         PHOTON_G(current_application_name),
         PHOTON_G(current_application_version),
         PHOTON_G(current_mode),
@@ -359,6 +365,12 @@ static int photon_report_transaction_info()
 
     efree(result);
 
+    // Only release `char *` properties. Do not free timespecs and txn ID, they are overwritten properly.
+    efree(PHOTON_G(current_application_name));
+    efree(PHOTON_G(current_application_version));
+    efree(PHOTON_G(current_mode));
+    efree(PHOTON_G(current_endpoint_name));
+
     return SUCCESS;
 }
 
@@ -372,20 +384,18 @@ static int photon_send_to_agent(char *data, size_t length)
     if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
         // TODO: Handle error
         return sendto(
-            PHOTON_G(agent_connection).sd,
+            PHOTON_G(agent_connection)->sd,
             data,
             length + 1,
             0,
-            (struct sockaddr*)&PHOTON_G(agent_connection).addr_in,
-            sizeof(PHOTON_G(agent_connection).addr_in)
+            (struct sockaddr*)&PHOTON_G(agent_connection)->addr_in,
+            sizeof(PHOTON_G(agent_connection)->addr_in)
         );
     }
 
     // UNIX and TCP have identical `send`
     // TODO: Handle error
-    return send(PHOTON_G(agent_connection).sd, data, length, 0);
-
-    return -1;
+    return send(PHOTON_G(agent_connection)->sd, data, length, 0);
 }
 
 PHP_FUNCTION(photon_get_application_name)

@@ -70,7 +70,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     char *application_version;
 
     // TODO: Move all request info into a structure `current_transaction_info` and drop `current(_request)` prefix
-    // TODO: Will need to free said structure in RSHUTDOWN
+    // TODO: Will need a destructor to clean `char *`
     char  *current_application_name;
     char  *current_application_version;
     char  *current_endpoint_name;
@@ -87,7 +87,8 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     long  agent_port;
     char *agent_socket_path;
 
-    struct agent_connection agent_connection;
+    // Connection will be created using `pemalloc` during MINIT and shared between all requests
+    struct agent_connection *agent_connection;
 
     // TODO: Request stats (memory, CPU & time, trace ID)
     // TODO: Profiling stack/log (class+function, stack depth, execution time + tags)
