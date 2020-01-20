@@ -68,6 +68,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     char *application_name;
     char *application_version;
 
+    // TODO: Move all request info into a structure `current_transaction_info` and drop `current(_request)` prefix
     char *current_application_name;
     char *current_application_version;
     char *current_endpoint_name;

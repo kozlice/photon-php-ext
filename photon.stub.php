@@ -1,6 +1,10 @@
 <?php
 
+function photon_get_application_name(): string {}
+
 function photon_set_application_name(string $name): bool {}
+
+function photon_get_application_version(): string {}
 
 function photon_set_application_version(string $version): bool {}
 
