@@ -87,8 +87,7 @@ ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute
 
     struct timespec stop;
     clock_gettime(CLOCK_MONOTONIC, &stop);
-    double diff = (stop.tv_sec - start.tv_sec) * 1e3 + (stop.tv_nsec - start.tv_nsec) / 1e6;
-    //printf("%d - %s - %s@%s - %f ms\n", PHOTON_G(stack_depth), file_name, class_name, function_name, diff);
+    uint64_t diff = timespec_ns_diff(&start, &stop);
     PHOTON_G(stack_depth)--;
 }
 
@@ -127,11 +126,25 @@ static int photon_connect_to_agent()
     // TODO: Close & free on shutdown!
     // TODO: Create socket connection: must be per-process, not per-thread, yet synced write into buffer is required
     // TODO: On error - disable extension?
+    // TODO: Refactor - a lot of common parts here
 
     if (strcmp(PHOTON_G(agent_transport), "tcp") == 0) {
         // TODO: Handle errors
+        int sd;
+        struct sockaddr_in addr;
+        // TODO: Replace with `getaddrinfo`, see https://www.kutukupret.com/2009/09/28/gethostbyname-vs-getaddrinfo/
+        // TODO: Should we free this one?
+        struct hostent *hostname = gethostbyname(PHOTON_G(agent_host));
 
         // TODO: Establish connection
+        sd = socket(AF_INET, SOCK_STREAM, 0);
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(PHOTON_G(agent_port));
+        addr.sin_addr.s_addr = *((unsigned long *)hostname->h_addr);
+        connect(sd, (struct sockaddr*)&addr, sizeof(addr));
+
+        PHOTON_G(agent_connection).sd = sd;
+        PHOTON_G(agent_connection).addr_in = addr;
 
         return SUCCESS;
     } else if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
@@ -147,8 +160,6 @@ static int photon_connect_to_agent()
         PHOTON_G(agent_connection).sd = sd;
         PHOTON_G(agent_connection).addr_in = addr;
 
-//        printf("Socket: %d, host: %s, port: %d\n", PHOTON_G(agent_connection).sd, inet_ntoa(PHOTON_G(agent_connection).addr_in.sin_addr), PHOTON_G(agent_connection).addr_in.sin_port);
-
         return SUCCESS;
     } else if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
         // TODO: Handle errors
@@ -159,6 +170,7 @@ static int photon_connect_to_agent()
         addr.sun_family = AF_UNIX;
         memset(&addr, 0, sizeof(addr));
         strcpy(addr.sun_path, PHOTON_G(agent_socket_path));
+        // For SUN_LEN see https://unix.superglobalmegacorp.com/Net2/newsrc/sys/un.h.html
         connect(sd, (struct sockaddr*)&addr, SUN_LEN(&addr));
 
         PHOTON_G(agent_connection).sd = sd;
@@ -210,12 +222,14 @@ static int photon_disconnect_from_agent()
         return SUCCESS;
     }
 
+    close(PHOTON_G(agent_connection).sd);
+
     if (strcmp(PHOTON_G(agent_transport), "tcp") == 0) {
-        // TODO: What here?
+        // TODO: Anything specific here?
     } else if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
-        // TODO: What here?
+        // TODO: Anything specific here?
     } else if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
-        close(PHOTON_G(agent_connection).sd);
+        // TODO: Anything specific here?
     }
 
     return SUCCESS;
@@ -344,12 +358,6 @@ static int photon_send_to_agent(char *data, size_t length)
         return -1;
     }
 
-    if (strcmp(PHOTON_G(agent_transport), "tcp") == 0) {
-        // TODO: ?
-
-        return 0;
-    }
-
     if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
         // TODO: Handle error
         return sendto(
@@ -362,10 +370,9 @@ static int photon_send_to_agent(char *data, size_t length)
         );
     }
 
-    if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
-        // TODO: Handle error
-        return send(PHOTON_G(agent_connection).sd, data, length, 0);
-    }
+    // UNIX and TCP have identical `send`
+    // TODO: Handle error
+    return send(PHOTON_G(agent_connection).sd, data, length, 0);
 
     return -1;
 }

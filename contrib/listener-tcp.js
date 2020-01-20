@@ -1,12 +1,13 @@
 /**
- * Start web server with UNIX socket transport:
- * php -d extension=photon.so -d photon.agent_transport=unix -d photon.agent_socket_path=/tmp/photon-agent.sock -S localhost:8000
+ * Start web server with TCP transport:
+ * php -d extension=photon.so -d photon.agent_transport=tcp -d photon.agent_port=8990 -S localhost:8000
  *
- * Run CLI script with UNIX socket transport:
- * php -d extension=photon.so -d photon.agent_transport=unix -d photon.agent_socket_path=/tmp/photon-agent.sock test.php
+ * Run CLI script with TCP transport:
+ * php -d extension=photon.so -d photon.agent_transport=tcp -d photon.agent_port=8990 test.php
  */
 
-const SOCKET_FILE_PATH = '/tmp/photon-agent.sock';
+const PORT = 8990;
+const HOST = '127.0.0.1';
 
 const net = require('net');
 
@@ -23,7 +24,12 @@ const server = net.createServer(function(stream) {
     });
 });
 
-server.listen(SOCKET_FILE_PATH);
+server.on('listening', function() {
+    const address = server.address();
+    console.log('TCP server listening on ' + address.address + ':' + address.port);
+});
+
+server.listen(PORT, HOST);
 
 server.on('connection', function(socket) {
     console.log('New client connected');
