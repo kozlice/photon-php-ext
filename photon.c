@@ -124,9 +124,8 @@ PHP_MINIT_FUNCTION(photon)
 static int photon_connect_to_agent()
 {
     // TODO: Close & free on shutdown!
-    // TODO: Create socket connection: must be per-process, not per-thread, yet synced write into buffer is required
     // TODO: On error - disable extension?
-    // TODO: Refactor - a lot of common parts here
+    // TODO: Refactor: too much similar code
 
     if (strcmp(PHOTON_G(agent_transport), "tcp") == 0) {
         // TODO: Handle errors
@@ -136,11 +135,10 @@ static int photon_connect_to_agent()
         // TODO: Should we free this one?
         struct hostent *hostname = gethostbyname(PHOTON_G(agent_host));
 
-        // TODO: Establish connection
-        sd = socket(AF_INET, SOCK_STREAM, 0);
         addr.sin_family = AF_INET;
         addr.sin_port = htons(PHOTON_G(agent_port));
         addr.sin_addr.s_addr = *((unsigned long *)hostname->h_addr);
+        sd = socket(AF_INET, SOCK_STREAM, 0);
         connect(sd, (struct sockaddr*)&addr, sizeof(addr));
 
         PHOTON_G(agent_connection).sd = sd;
@@ -152,10 +150,10 @@ static int photon_connect_to_agent()
         int sd;
         struct sockaddr_in addr;
 
-        sd = socket(AF_INET, SOCK_DGRAM, 0);
         addr.sin_family = AF_INET;
         addr.sin_port = htons(PHOTON_G(agent_port));
         addr.sin_addr.s_addr = inet_addr(PHOTON_G(agent_host));
+        sd = socket(AF_INET, SOCK_DGRAM, 0);
 
         PHOTON_G(agent_connection).sd = sd;
         PHOTON_G(agent_connection).addr_in = addr;
@@ -166,8 +164,8 @@ static int photon_connect_to_agent()
         int sd;
         struct sockaddr_un addr;
 
-        sd = socket(PF_UNIX, SOCK_STREAM, 0);
         addr.sun_family = AF_UNIX;
+        sd = socket(PF_UNIX, SOCK_STREAM, 0);
         memset(&addr, 0, sizeof(addr));
         strcpy(addr.sun_path, PHOTON_G(agent_socket_path));
         // For SUN_LEN see https://unix.superglobalmegacorp.com/Net2/newsrc/sys/un.h.html
