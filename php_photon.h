@@ -87,7 +87,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     struct agent_connection *agent_connection;
 
     // Request-specific: `emalloc` during RINIT and `efree` at RSHUTDOWN
-    struct transaction *current_transaction;
+    zend_llist transactions_list;
 
     // TODO: Request stats (memory, CPU & time, trace ID)
     // TODO: Profiling stack/log (class+function, stack depth, execution time + tags)
@@ -117,8 +117,9 @@ static int photon_disconnect_from_agent();
 static int photon_restore_execute();
 
 static int photon_send_to_agent(char *data, size_t length);
-static int photon_start_transaction();
-static int photon_finish_transaction();
+static int photon_transaction_ctor(struct transaction *t, char *endpoint_name, struct transaction *parent);
+static int photon_transaction_end(struct transaction *t);
+void photon_transaction_llist_element_dtor(struct transaction **tp);
 
 PHP_MINIT_FUNCTION(photon);
 PHP_MSHUTDOWN_FUNCTION(photon);
