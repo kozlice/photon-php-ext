@@ -216,10 +216,10 @@ PHP_RINIT_FUNCTION(photon)
         strcmp(sapi_module.name, "apache") == 0
     ) {
         // TODO: Should we add host name to transaction data?
-        PHOTON_G(current_transaction_name) = estrdup(SG(request_info).request_uri);
+        PHOTON_G(current_endpoint_name) = estrdup(SG(request_info).request_uri);
     } else if (strcmp(sapi_module.name, "cli") == 0) {
         // TODO: This is a full file path, resolved in `php_cli.c`. Just script filename should be enough
-        PHOTON_G(current_transaction_name) = estrdup(SG(request_info).path_translated);
+        PHOTON_G(current_endpoint_name) = estrdup(SG(request_info).path_translated);
     }
 
     return SUCCESS;
@@ -299,16 +299,16 @@ PHP_FUNCTION(photon_set_application_version)
     RETURN_TRUE;
 }
 
-PHP_FUNCTION(photon_get_transaction_name)
+PHP_FUNCTION(photon_get_endpoint_name)
 {
-    RETURN_STRING(PHOTON_G(current_transaction_name));
+    RETURN_STRING(PHOTON_G(current_endpoint_name));
 }
 
-ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_transaction_name, 0, 0, 1)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_endpoint_name, 0, 0, 1)
     ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
 ZEND_END_ARG_INFO()
 
-PHP_FUNCTION(photon_set_transaction_name)
+PHP_FUNCTION(photon_set_endpoint_name)
 {
     zend_string *name = NULL;
 
@@ -317,10 +317,10 @@ PHP_FUNCTION(photon_set_transaction_name)
     ZEND_PARSE_PARAMETERS_END();
 
     // TODO: This approach is used in built-in extensions, so I assume it's memory safe
-    if (PHOTON_G(current_transaction_name)) {
-        efree(PHOTON_G(current_transaction_name));
+    if (PHOTON_G(current_endpoint_name)) {
+        efree(PHOTON_G(current_endpoint_name));
     }
-    PHOTON_G(current_transaction_name) = estrdup(ZSTR_VAL(name));
+    PHOTON_G(current_endpoint_name) = estrdup(ZSTR_VAL(name));
     zend_string_release(name);
 
     RETURN_TRUE;
@@ -354,8 +354,8 @@ static const zend_function_entry photon_functions[] = {
     PHP_FE(photon_set_application_name,    arginfo_photon_set_application_name)
     PHP_FE(photon_get_application_version, NULL)
     PHP_FE(photon_set_application_version, arginfo_photon_set_application_version)
-    PHP_FE(photon_get_transaction_name,    NULL)
-    PHP_FE(photon_set_transaction_name,    arginfo_photon_set_transaction_name)
+    PHP_FE(photon_get_endpoint_name,    NULL)
+    PHP_FE(photon_set_endpoint_name,    arginfo_photon_set_endpoint_name)
     PHP_FE(photon_get_trace_id,            NULL)
     PHP_FE(photon_set_trace_id,            arginfo_photon_set_trace_id)
     PHP_FE_END

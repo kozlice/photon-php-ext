@@ -59,7 +59,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
 
     char     *current_application_name;
     char     *current_application_version;
-    char     *current_transaction_name;
+    char     *current_endpoint_name;
 
     // TODO: Socket connection itself: need a union for TCP/UDP/Unix
     char     *agent_transport;
@@ -102,8 +102,8 @@ PHP_FUNCTION(photon_get_application_name);
 PHP_FUNCTION(photon_set_application_name);
 PHP_FUNCTION(photon_get_application_version);
 PHP_FUNCTION(photon_set_application_version);
-PHP_FUNCTION(photon_get_transaction_name);
-PHP_FUNCTION(photon_set_transaction_name);
+PHP_FUNCTION(photon_get_endpoint_name);
+PHP_FUNCTION(photon_set_endpoint_name);
 PHP_FUNCTION(photon_get_trace_id);
 PHP_FUNCTION(photon_set_trace_id);
 
