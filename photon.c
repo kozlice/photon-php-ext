@@ -22,6 +22,7 @@
 #include "ext/standard/info.h"
 #include "php_photon.h"
 #include "zend_extensions.h"
+#include "SAPI.h"
 
 // For compatibility with older PHP versions
 #ifndef ZEND_PARSE_PARAMETERS_NONE
@@ -207,6 +208,19 @@ PHP_RINIT_FUNCTION(photon)
     // the original leads to `zend_mm_heap corrupted`.
     PHOTON_G(current_application_name) = estrdup(PHOTON_G(application_name));
     PHOTON_G(current_application_version) = estrdup(PHOTON_G(application_version));
+
+    if (
+        strcmp(sapi_module.name, "fpm-fcgi") == 0 ||
+        strcmp(sapi_module.name, "cli-server") == 0 ||
+        strcmp(sapi_module.name, "cgi-fcgi") == 0 ||
+        strcmp(sapi_module.name, "apache") == 0
+    ) {
+        // TODO: Should we add host name to transaction data?
+        PHOTON_G(current_transaction_name) = estrdup(SG(request_info).request_uri);
+    } else if (strcmp(sapi_module.name, "cli") == 0) {
+        // TODO: This is a full file path, resolved in `php_cli.c`. Just script filename should be enough
+        PHOTON_G(current_transaction_name) = estrdup(SG(request_info).path_translated));
+    }
 
     return SUCCESS;
 }

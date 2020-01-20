@@ -59,6 +59,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
 
     char     *current_application_name;
     char     *current_application_version;
+    char     *current_transaction_name;
 
     // TODO: Socket connection itself: need a union for TCP/UDP/Unix
     char     *agent_transport;
@@ -79,7 +80,6 @@ ZEND_END_MODULE_GLOBALS(photon)
 #define PHOTON_G(v) (photon_globals.v)
 #endif
 
-// TODO: Should we make these static?
 ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value);
 ZEND_API void photon_execute_internal(zend_execute_data *execute_data, zval *return_value);
 ZEND_API void photon_execute_ex (zend_execute_data *execute_data);
@@ -102,9 +102,9 @@ PHP_FUNCTION(photon_get_application_name);
 PHP_FUNCTION(photon_set_application_name);
 PHP_FUNCTION(photon_get_application_version);
 PHP_FUNCTION(photon_set_application_version);
+PHP_FUNCTION(photon_get_transaction_name);
 PHP_FUNCTION(photon_set_transaction_name);
 PHP_FUNCTION(photon_get_trace_id);
-// TODO: Should this function only accept UUIDs? Or any non-empty strings?
 PHP_FUNCTION(photon_set_trace_id);
 
 #endif /* PHP_PHOTON_H */
