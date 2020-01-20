@@ -15,7 +15,7 @@
 */
 
 #ifndef PHP_PHOTON_H
-# define PHP_PHOTON_H
+#define PHP_PHOTON_H
 
 // TODO: Only keep what we need
 #include <stdio.h>
@@ -29,19 +29,19 @@
 #include <uuid/uuid.h>
 
 extern zend_module_entry photon_module_entry;
-# define phpext_photon_ptr &photon_module_entry
+#define phpext_photon_ptr &photon_module_entry
 
-# define PHP_PHOTON_NAME "photon"
-# define PHP_PHOTON_VERSION "0.1.0"
+#define PHP_PHOTON_NAME "photon"
+#define PHP_PHOTON_VERSION "0.1.0"
 
-# if defined(ZTS) && defined(COMPILE_DL_PHOTON)
+#if defined(ZTS) && defined(COMPILE_DL_PHOTON)
 ZEND_TSRMLS_CACHE_EXTERN()
-# endif
+#endif
 
-# define PHOTON_AGENT_DEFAULT_HOST "localhost"
+#define PHOTON_AGENT_DEFAULT_HOST "localhost"
 // During .ini parsing it will be converted into long, but input must be string
-# define PHOTON_AGENT_DEFAULT_PORT "8989"
-# define PHOTON_AGENT_DEFAULT_SOCKET_PATH "/var/run/photon-agent.sock"
+#define PHOTON_AGENT_DEFAULT_PORT "8989"
+#define PHOTON_AGENT_DEFAULT_SOCKET_PATH "/var/run/photon-agent.sock"
 
 // TODO: Macros for intercepting functions and class methods
 // TODO: Structs for holding request basic info and detailed report
@@ -62,8 +62,8 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     char *current_application_version;
     char *current_endpoint_name;
     char *current_mode;
-    struct timespec current_request_start_time;
-    struct timespec current_request_start_cpu_clock;
+    struct timespec current_request_timer_start;
+    struct timespec current_request_cpu_timer_start;
 
     // TODO: Socket connection itself: need a union for TCP/UDP/Unix
     char *agent_transport;
@@ -88,12 +88,16 @@ ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute
 ZEND_API void photon_execute_internal(zend_execute_data *execute_data, zval *return_value);
 ZEND_API void photon_execute_ex (zend_execute_data *execute_data);
 
+static zend_always_inline uint64_t get_timespec_diff(struct timespec *start, struct timespec *end);
+
 static int photon_minit_connect_to_agent();
 static int photon_minit_configure_interceptors();
 static int photon_minit_override_execute();
 
 static int photon_mshutdown_disconnect_from_agent();
 static int photon_mshutdown_restore_execute();
+
+static int photon_rshutdown_report_request();
 
 PHP_MINIT_FUNCTION(photon);
 PHP_MSHUTDOWN_FUNCTION(photon);

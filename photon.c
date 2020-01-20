@@ -48,6 +48,11 @@ PHP_INI_BEGIN()
     // TODO: Profiling and tracing options
 PHP_INI_END()
 
+static zend_always_inline uint64_t get_timespec_ns_diff(struct timespec *start, struct timespec *end)
+{
+    return (end->tv_sec - start->tv_sec) * 1e9 + (end->tv_nsec - start->tv_nsec);
+}
+
 static void (*original_zend_execute_ex)(zend_execute_data *execute_data);
 static void (*original_zend_execute_internal)(zend_execute_data *execute_data, zval *return_value);
 
@@ -225,8 +230,8 @@ PHP_RINIT_FUNCTION(photon)
         PHOTON_G(current_mode) = estrdup("cli");
     }
 
-    clock_gettime(CLOCK_MONOTONIC, &PHOTON_G(current_request_start_time));
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &PHOTON_G(current_request_start_cpu_clock));
+    clock_gettime(CLOCK_MONOTONIC, &PHOTON_G(current_request_timer_start));
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &PHOTON_G(current_request_cpu_timer_start));
 
     return SUCCESS;
 }
@@ -241,19 +246,28 @@ PHP_RSHUTDOWN_FUNCTION(photon)
     // TODO: Clean up
     // TODO: Split into functions
 
-    struct timespec current_request_end_time;
-    clock_gettime(CLOCK_MONOTONIC, &current_request_end_time);
-    uint64_t current_request_duration =
-        (current_request_end_time.tv_sec - PHOTON_G(current_request_start_time).tv_sec) * 1e9 +
-        (current_request_end_time.tv_nsec - PHOTON_G(current_request_start_time).tv_nsec);
+    photon_rshutdown_report_request();
 
-    struct timespec current_request_end_cpu_clock;
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &current_request_end_cpu_clock);
-    uint64_t current_request_cpu_time =
-        (current_request_end_cpu_clock.tv_sec - PHOTON_G(current_request_start_cpu_clock).tv_sec) * 1e9 +
-        (current_request_end_cpu_clock.tv_nsec - PHOTON_G(current_request_start_cpu_clock).tv_nsec);
+    return SUCCESS;
+}
 
-    printf(
+static int photon_rshutdown_report_request()
+{
+    struct timespec current_request_timer_end;
+    clock_gettime(CLOCK_MONOTONIC, &current_request_timer_end);
+    uint64_t current_request_duration = get_timespec_ns_diff(&PHOTON_G(current_request_timer_start), &current_request_timer_end);
+
+    struct timespec current_request_cpu_timer_end;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &current_request_cpu_timer_end);
+    uint64_t current_request_cpu_time = get_timespec_ns_diff(&PHOTON_G(current_request_cpu_timer_start), &current_request_cpu_timer_end);
+
+    // See http://www.phpinternalsbook.com/php7/internal_types/strings/printing_functions.html
+    char *result;
+    int length;
+
+    // TODO: Strings with spaces need to be escaped
+    length = spprintf(
+        &result, 0,
         "txn,app=%s,ver=%s,mode=%s,endpoint=%s tt=%"PRIu64"i,tc=%"PRIu64"i,mu=%lu,mr=%lu\n",
         PHOTON_G(current_application_name),
         PHOTON_G(current_application_version),
@@ -264,6 +278,8 @@ PHP_RSHUTDOWN_FUNCTION(photon)
         zend_memory_peak_usage(0),
         zend_memory_peak_usage(1)
     );
+
+    efree(result);
 
     return SUCCESS;
 }
