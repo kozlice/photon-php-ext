@@ -290,6 +290,7 @@ static const zend_function_entry photon_functions[] = {
 
 static const zend_module_dep photon_deps[] = {
     ZEND_MOD_REQUIRED("curl")
+    ZEND_MOD_END
 };
 
 zend_module_entry photon_module_entry = {
