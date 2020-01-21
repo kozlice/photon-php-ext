@@ -28,6 +28,7 @@ static MUTEX_T photon_agent_mutex = NULL;
 #include "php_photon.h"
 #include "zend_extensions.h"
 #include "Zend/zend_llist.h"
+#include "Zend/zend_stack.h"
 #include "SAPI.h"
 
 // For compatibility with older PHP versions
@@ -307,23 +308,24 @@ PHP_RINIT_FUNCTION(photon)
     // TODO: Read or create X-Photon-Trace-Id, will be used for tracing
     // TODO: Init span stack
 
-    // TODO: Move to `photon_transactions_list_init()` + `photon_transaction_start()`
+    // TODO: Move to `photon_transactions_stack_init()` + `photon_transaction_start()`
     // Watch out: element is a pointer to transaction, not a transaction itself
-    zend_llist *tl = &PHOTON_G(transactions_list);
-    zend_llist_init(tl, sizeof(struct transaction *), (llist_dtor_func_t) photon_transaction_llist_element_dtor, 0);
+    TXN_STACK_INIT;
+
     struct transaction *t = emalloc(sizeof(struct transaction));
     // TODO: Initial name?
     photon_transaction_ctor(t, "whatever", NULL);
-    // Pass pointer to pointer
-    zend_llist_add_element(tl, &t);
+    TXN_STACK_PUSH(t);
+    struct transaction *t2 = emalloc(sizeof(struct transaction));
+    // TODO: Initial name?
+    photon_transaction_ctor(t2, "and-more", NULL);
+    TXN_STACK_PUSH(t2);
 
     return SUCCESS;
 }
 
-void photon_transaction_llist_element_dtor(struct transaction **tp)
+void photon_transaction_dtor(struct transaction *t)
 {
-    struct transaction *t = *tp;
-
     efree(t->app_name);
     efree(t->app_version);
     efree(t->endpoint_mode);
@@ -381,13 +383,13 @@ PHP_RSHUTDOWN_FUNCTION(photon)
 
     // TODO: Main issue: can not properly pop tail, some issues with casting
     // TODO: Free profiling / tracing info
-    zend_llist *tl = &PHOTON_G(transactions_list);
-    while (0 < zend_llist_count(tl)) {
-        // `data` is a double pointer
-        struct transaction *t = (struct transaction *)*((struct transaction **)zend_llist_get_last(tl));
+    while (!zend_stack_is_empty(TXN_STACK)) {
+        struct transaction *t = TXN_STACK_TOP;
         photon_transaction_end(t);
-        zend_llist_remove_tail(tl);
+        zend_stack_del_top(TXN_STACK);
     }
+    zend_stack_destroy(TXN_STACK);
+    efree(TXN_STACK);
 
     // TODO: Is immediate fflush required? Or is it enough to do it here, per-request?
     fflush(PHOTON_G(transaction_log));

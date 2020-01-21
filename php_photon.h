@@ -96,7 +96,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     struct agent_connection *agent_connection;
 
     // Request-specific: `emalloc` during RINIT and `efree` at RSHUTDOWN
-    zend_llist transactions_list;
+    zend_stack *transaction_stack;
 
     FILE *transaction_log;
 
@@ -105,6 +105,14 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     // TODO: This is temporary, need to move to profiling
     int stack_depth;
 ZEND_END_MODULE_GLOBALS(photon)
+
+#define TXN_LOG             PHOTON_G(transaction_log)
+
+#define TXN_STACK           PHOTON_G(transaction_stack)
+#define TXN_STACK_INIT      TXN_STACK = emalloc(sizeof(zend_stack)); \
+                            zend_stack_init(TXN_STACK, sizeof(struct transaction *))
+#define TXN_STACK_PUSH(txn) zend_stack_push(TXN_STACK, &txn)
+#define TXN_STACK_TOP       *(struct transaction **)zend_stack_top(TXN_STACK)
 
 // Define globals accessor
 #ifdef ZTS
