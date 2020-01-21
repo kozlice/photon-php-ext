@@ -57,6 +57,15 @@ struct agent_connection {
     };
 };
 
+enum transaction_mode {
+    TRANSACTION_MODE_WEB = 0,
+    TRANSACTION_MODE_CLI = 1,
+};
+
+static const char *transaction_mode_str[] = {
+        "web", "cli",
+};
+
 struct transaction {
     // See https://stackoverflow.com/questions/51053568/generating-a-random-uuid-in-c
     char   id[37];

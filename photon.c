@@ -18,6 +18,10 @@
 # include "config.h"
 #endif
 
+#ifdef ZTS
+static MUTEX_T photon_agent_mutex = NULL;
+#endif
+
 #include "php.h"
 #include "ext/standard/info.h"
 #include "php_photon.h"
@@ -118,6 +122,10 @@ PHP_MINIT_FUNCTION(photon)
         return SUCCESS;
     }
 
+#ifdef ZTS
+    photon_agent_mutex = tsrm_mutex_alloc();
+#endif
+
     if (extension_loaded("PDO")) {
         printf("PDO is loaded\n");
     }
@@ -134,6 +142,9 @@ PHP_MINIT_FUNCTION(photon)
 
 static int photon_connect_to_agent()
 {
+#ifdef ZTS
+    tsrm_mutex_lock(photon_agent_mutex);
+#endif
     PHOTON_G(agent_connection) = pemalloc(sizeof(struct agent_connection), 1);
 
     // TODO: Close & free on shutdown!
@@ -157,6 +168,9 @@ static int photon_connect_to_agent()
         PHOTON_G(agent_connection)->sd = sd;
         PHOTON_G(agent_connection)->addr_in = addr;
 
+#ifdef ZTS
+        tsrm_mutex_unlock(photon_agent_mutex);
+#endif
         return SUCCESS;
     } else if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
         // TODO: Handle errors
@@ -171,6 +185,9 @@ static int photon_connect_to_agent()
         PHOTON_G(agent_connection)->sd = sd;
         PHOTON_G(agent_connection)->addr_in = addr;
 
+#ifdef ZTS
+        tsrm_mutex_unlock(photon_agent_mutex);
+#endif
         return SUCCESS;
     } else if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
         // TODO: Handle errors
@@ -187,6 +204,9 @@ static int photon_connect_to_agent()
         PHOTON_G(agent_connection)->sd = sd;
         PHOTON_G(agent_connection)->addr_un = addr;
 
+#ifdef ZTS
+        tsrm_mutex_unlock(photon_agent_mutex);
+#endif
         return SUCCESS;
     }
 
@@ -359,8 +379,7 @@ PHP_RSHUTDOWN_FUNCTION(photon)
     zend_llist *tl = &PHOTON_G(transactions_list);
     while (0 < zend_llist_count(tl)) {
         // `data` is a double pointer
-        struct transaction **tp = (struct transaction **)zend_llist_get_last(tl);
-        struct transaction *t = *tp;
+        struct transaction *t = (struct transaction *)*((struct transaction **)zend_llist_get_last(tl));
         photon_transaction_end(t);
         zend_llist_remove_tail(tl);
     }
@@ -375,6 +394,8 @@ static int photon_transaction_end(struct transaction *t)
     if (0 == PHOTON_G(enable)) {
         return SUCCESS;
     }
+
+    printf("Ending transaction %s\n", t->id);
 
     struct timespec monotonic_timer_end;
     clock_gettime(CLOCK_MONOTONIC, &monotonic_timer_end);
