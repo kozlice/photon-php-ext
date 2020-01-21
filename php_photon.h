@@ -46,12 +46,20 @@ typedef struct _transaction {
     uint64_t timer_cpu;
 } transaction;
 
+typedef void (*callback)(zend_execute_data *);
+
+typedef struct _interceptor {
+    char *name;
+    callback fn;
+} interceptor;
+
 ZEND_BEGIN_MODULE_GLOBALS(photon)
     zend_bool enable;
     char *transaction_log_path;
 
-    FILE *transaction_log;
+    FILE       *transaction_log;
     zend_stack *transaction_stack;
+    HashTable  *interceptor_table;
 ZEND_END_MODULE_GLOBALS(photon)
 
 // Define globals accessor
@@ -61,9 +69,10 @@ ZEND_END_MODULE_GLOBALS(photon)
 #define PHOTON_G(v) (photon_globals.v)
 #endif
 
-#define PHOTON_NOT_ENABLED (0 == PHOTON_G(enable))
-#define PHOTON_TXN_LOG     PHOTON_G(transaction_log)
-#define PHOTON_TXN_STACK   PHOTON_G(transaction_stack)
+#define PHOTON_NOT_ENABLED  (0 == PHOTON_G(enable))
+#define PHOTON_TXN_LOG      PHOTON_G(transaction_log)
+#define PHOTON_TXN_STACK    PHOTON_G(transaction_stack)
+#define PHOTON_INTERCEPTORS PHOTON_G(interceptor_table)
 
 ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value);
 ZEND_API void photon_execute_internal(zend_execute_data *execute_data, zval *return_value);

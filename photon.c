@@ -66,6 +66,14 @@ static void (*original_zend_execute_internal)(zend_execute_data *execute_data, z
 ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value)
 {
     // TODO: Check if function needs to be intercepted
+    zend_function *zf = execute_data->func;
+    char *function_name = zf->common.function_name == NULL ? NULL : ZSTR_VAL(zf->common.function_name);
+    if (NULL != function_name) {
+        interceptor *itc = zend_hash_str_find_ptr(PHOTON_INTERCEPTORS, function_name, strlen(function_name));
+        if (NULL != itc && NULL != itc->fn) {
+            itc->fn(execute_data);
+        }
+    }
 
     if (internal) {
         if (original_zend_execute_internal) {
@@ -92,6 +100,12 @@ ZEND_API void photon_execute_internal(zend_execute_data *execute_data, zval *ret
     photon_execute_base(1, execute_data, return_value);
 }
 
+// TODO: All interceptors should have same signature
+void curl_exec_interceptor(zend_execute_data *execute_data)
+{
+    puts("Stuff?..");
+}
+
 PHP_MINIT_FUNCTION(photon)
 {
     // Read configuration
@@ -110,6 +124,12 @@ PHP_MINIT_FUNCTION(photon)
     // TODO: The rest of them
 
     // TODO: Init interceptors
+    PHOTON_INTERCEPTORS = pemalloc(sizeof(HashTable), 1);
+    zend_hash_init(PHOTON_INTERCEPTORS, 128, NULL /* TODO: hash function? */, NULL /* TODO: element destructor? */, 1);
+    interceptor *itc = (interceptor *) pemalloc(sizeof(interceptor), 1);
+    itc->name = "whatever";
+    itc->fn = &curl_exec_interceptor;
+    zend_hash_str_add_mem(PHOTON_INTERCEPTORS, "curl_exec", strlen("curl_exec"), itc, sizeof(interceptor));
 
     // Overload VM execution functions
     original_zend_execute_internal = zend_execute_internal;
@@ -140,7 +160,8 @@ PHP_MSHUTDOWN_FUNCTION(photon)
     zend_execute_internal = original_zend_execute_internal;
     zend_execute_ex = original_zend_execute_ex;
 
-    // TODO: Release interceptors
+    // TODO: Release interceptors - need destructors for every one of them
+    pefree(PHOTON_INTERCEPTORS, 1);
 
     // Close transaction log
     fclose(PHOTON_TXN_LOG);
@@ -162,6 +183,7 @@ PHP_RINIT_FUNCTION(photon)
     }
 
     // Initialize transaction stack
+    // TODO: try `zend_ptr_stack_init` instead
     PHOTON_TXN_STACK = emalloc(sizeof(zend_stack));
     zend_stack_init(PHOTON_TXN_STACK, sizeof(transaction *));
 
