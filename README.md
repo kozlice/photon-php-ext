@@ -18,20 +18,11 @@ make install
 All values in these example are the default values.
 
 ```ini
-; Overall extension behaviour (on or off).
+; Overall extension switch.
 photon.enable = 1;
 
-; Your application's name and version.
-; These can be changed during runtime.
-photon.app_name = "PHP application";
-photon.app_version = "0.1.0";
-
-; It is possible to send data to agent over UDP, TCP, or Unix socket.
-; Possible values for transport are "tcp", "udp" and "unix".
-photon.agent_transport = "udp";
-photon.agent_socket_path = "/var/run/photon-agent.sock";
-photon.agent_host = "127.0.0.1";
-photon.agent_port = 8989;
+; Path to transaction log.
+photon.transaction_log_path = "/var/log/photon-php-transaction.log";
 
 ; Whether to enable or not profiling in web and CLI.
 photon.profiling_web = 1;

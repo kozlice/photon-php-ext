@@ -21,13 +21,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <time.h>
 #include <inttypes.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-
 #include <uuid/uuid.h>
 
 extern zend_module_entry photon_module_entry;
@@ -40,79 +35,24 @@ extern zend_module_entry photon_module_entry;
 ZEND_TSRMLS_CACHE_EXTERN()
 #endif
 
-#define PHOTON_AGENT_DEFAULT_HOST "127.0.0.1"
-// During .ini parsing it will be converted into long, but input must be string
-#define PHOTON_AGENT_DEFAULT_PORT "8989"
-#define PHOTON_AGENT_DEFAULT_SOCKET_PATH "/var/run/photon-agent.sock"
-
-// TODO: Macros for intercepting functions and class methods
-// TODO: Structs for holding request basic info and detailed report
-
-// TODO: Need to free this in MSHUTDOWN
-struct agent_connection {
-    int sd;
-    union {
-        struct sockaddr_in addr_in;
-        struct sockaddr_un addr_un;
-    };
-};
-
-enum transaction_mode {
-    TRANSACTION_MODE_WEB = 0,
-    TRANSACTION_MODE_CLI = 1,
-};
-
-static const char *transaction_mode_str[] = {
-        "web", "cli",
-};
-
-struct transaction {
+typedef struct _transaction {
     // See https://stackoverflow.com/questions/51053568/generating-a-random-uuid-in-c
-    char   id[37];
-    char  *app_name;
-    char  *app_version;
-    char  *endpoint_name;
-    char  *endpoint_mode;
-    struct timespec timestamp_start;
-    struct timespec monotonic_timer_start;
-    struct timespec cpu_timer_start;
-};
+    char     id[37];
+    char    *app_name;
+    char    *app_version;
+    char    *endpoint_name;
+    uint64_t timestamp;
+    uint64_t timer_monotonic;
+    uint64_t timer_cpu;
+} transaction;
 
 ZEND_BEGIN_MODULE_GLOBALS(photon)
-    // Configuration from .ini
     zend_bool enable;
-    zend_bool profiling_web;
-    zend_bool profiling_cli;
-    zend_bool tracing_web;
-    zend_bool tracing_cli;
-    char *app_name;
-    char *app_version;
-    char *agent_transport;
-    char *agent_host;
-    long  agent_port;
-    char *agent_socket_path;
-
-    // Shared between requests: these will be allocated using `pemalloc` during MINIT and `pefree` at MSHUTDOWN
-    struct agent_connection *agent_connection;
-
-    // Request-specific: `emalloc` during RINIT and `efree` at RSHUTDOWN
-    zend_stack *transaction_stack;
+    char *transaction_log_path;
 
     FILE *transaction_log;
-
-    // TODO: Request stats (memory, CPU & time, trace ID)
-    // TODO: Profiling stack/log (class+function, stack depth, execution time + tags)
-    // TODO: This is temporary, need to move to profiling
-    int stack_depth;
+    zend_stack *transaction_stack;
 ZEND_END_MODULE_GLOBALS(photon)
-
-#define TXN_LOG             PHOTON_G(transaction_log)
-
-#define TXN_STACK           PHOTON_G(transaction_stack)
-#define TXN_STACK_INIT      TXN_STACK = emalloc(sizeof(zend_stack)); \
-                            zend_stack_init(TXN_STACK, sizeof(struct transaction *))
-#define TXN_STACK_PUSH(txn) zend_stack_push(TXN_STACK, &txn)
-#define TXN_STACK_TOP       *(struct transaction **)zend_stack_top(TXN_STACK)
 
 // Define globals accessor
 #ifdef ZTS
@@ -121,24 +61,22 @@ ZEND_END_MODULE_GLOBALS(photon)
 #define PHOTON_G(v) (photon_globals.v)
 #endif
 
+#define PHOTON_NOT_ENABLED (0 == PHOTON_G(enable))
+#define PHOTON_TXN_LOG     PHOTON_G(transaction_log)
+#define PHOTON_TXN_STACK   PHOTON_G(transaction_stack)
+
 ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value);
 ZEND_API void photon_execute_internal(zend_execute_data *execute_data, zval *return_value);
 ZEND_API void photon_execute_ex (zend_execute_data *execute_data);
 
-static zend_always_inline uint64_t timespec_to_ns(struct timespec *ts);
-static zend_always_inline uint64_t timespec_ns_diff(struct timespec *start, struct timespec *end);
+static zend_always_inline uint64_t clock_gettime_as_ns(clockid_t clk_id);
+static zend_always_inline int extension_loaded(char *extension_name);
 
-static int photon_connect_to_agent();
-static int photon_configure_interceptors();
-static int photon_override_execute();
-
-static int photon_disconnect_from_agent();
-static int photon_restore_execute();
-
-static int photon_send_to_agent(char *data, size_t length);
-static int photon_transaction_ctor(struct transaction *t, char *endpoint_name, struct transaction *parent);
-static int photon_transaction_end(struct transaction *t);
-void photon_transaction_llist_element_dtor(struct transaction **tp);
+static void photon_txn_start(char *endpoint_name);
+static void photon_txn_end();
+static void photon_txn_dtor(transaction *txn);
+static zend_always_inline transaction *photon_get_current_txn();
+static char *photon_get_default_endpoint_name();
 
 PHP_MINIT_FUNCTION(photon);
 PHP_MSHUTDOWN_FUNCTION(photon);
@@ -146,14 +84,5 @@ PHP_MINFO_FUNCTION(photon);
 
 PHP_RINIT_FUNCTION(photon);
 PHP_RSHUTDOWN_FUNCTION(photon);
-
-PHP_FUNCTION(photon_get_app_name);
-PHP_FUNCTION(photon_set_app_name);
-PHP_FUNCTION(photon_get_app_version);
-PHP_FUNCTION(photon_set_app_version);
-PHP_FUNCTION(photon_get_endpoint_name);
-PHP_FUNCTION(photon_set_endpoint_name);
-PHP_FUNCTION(photon_get_trace_id);
-PHP_FUNCTION(photon_set_trace_id);
 
 #endif /* PHP_PHOTON_H */

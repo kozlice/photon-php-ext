@@ -18,22 +18,15 @@
 # include "config.h"
 #endif
 
-#ifdef ZTS
-static MUTEX_T photon_agent_mutex = NULL;
-#endif
-
 #include "php.h"
 #include "ext/standard/info.h"
-#include "ext/standard/php_string.h"
-#include "php_photon.h"
-#include "zend_extensions.h"
-#include "Zend/zend_llist.h"
 #include "Zend/zend_stack.h"
 #include "SAPI.h"
+#include "php_photon.h"
 
 // For compatibility with older PHP versions
 #ifndef ZEND_PARSE_PARAMETERS_NONE
-# define ZEND_PARSE_PARAMETERS_NONE() \
+#define ZEND_PARSE_PARAMETERS_NONE() \
     ZEND_PARSE_PARAMETERS_START(0, 0) \
     ZEND_PARSE_PARAMETERS_END()
 #endif
@@ -41,47 +34,39 @@ static MUTEX_T photon_agent_mutex = NULL;
 ZEND_DECLARE_MODULE_GLOBALS(photon)
 
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("photon.enable",              "1",                              PHP_INI_SYSTEM, OnUpdateBool,   enable,            zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.app_name",            "php-application",                PHP_INI_SYSTEM, OnUpdateString, app_name,          zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.app_version",         "0.1.0",                          PHP_INI_SYSTEM, OnUpdateString, app_version,       zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.agent_transport",     "udp",                            PHP_INI_SYSTEM, OnUpdateString, agent_transport,   zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.agent_host",          PHOTON_AGENT_DEFAULT_HOST,        PHP_INI_SYSTEM, OnUpdateString, agent_host,        zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.agent_port",          PHOTON_AGENT_DEFAULT_PORT,        PHP_INI_SYSTEM, OnUpdateLong,   agent_port,        zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.agent_socket_path",   PHOTON_AGENT_DEFAULT_SOCKET_PATH, PHP_INI_SYSTEM, OnUpdateString, agent_socket_path, zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.profiling_web",       "1",                              PHP_INI_SYSTEM, OnUpdateBool,   profiling_web,     zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.profiling_cli",       "1",                              PHP_INI_SYSTEM, OnUpdateBool,   profiling_cli,     zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.tracing_web",         "1",                              PHP_INI_SYSTEM, OnUpdateBool,   tracing_web,       zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.tracing_cli",         "1",                              PHP_INI_SYSTEM, OnUpdateBool,   tracing_cli,       zend_photon_globals, photon_globals)
-    // TODO: Profiling and tracing options
+    STD_PHP_INI_ENTRY("photon.enable",               "1",                   PHP_INI_SYSTEM, OnUpdateBool,   enable,               zend_photon_globals, photon_globals)
+    // TODO: Change default path to `/var/log/photon-php-transactions.log` or something like that
+    STD_PHP_INI_ENTRY("photon.transaction_log_path", "/tmp/photon-txn.log", PHP_INI_SYSTEM, OnUpdateString, transaction_log_path, zend_photon_globals, photon_globals)
 PHP_INI_END()
 
-static zend_always_inline uint64_t timespec_ns_diff(struct timespec *start, struct timespec *end)
+// Returns clock as u64 instead of structure
+static uint64_t clock_gettime_as_ns(clockid_t clk_id)
 {
-    return timespec_to_ns(end) - timespec_to_ns(start);
+    struct timespec t;
+    clock_gettime(clk_id, &t);
+
+    return t.tv_sec * 1e9 + t.tv_nsec;
 }
 
-static zend_always_inline uint64_t timespec_to_ns(struct timespec *ts)
+// Checks if module/extension is loaded
+static zend_always_inline int extension_loaded(char *extension_name)
 {
-    return ts->tv_sec * 1e9 + ts->tv_nsec;
+    char *lower_name = zend_str_tolower_dup(extension_name, strlen(extension_name));
+    int result = zend_hash_str_exists(&module_registry, lower_name, strlen(lower_name));
+    efree(lower_name);
+
+    return result;
 }
 
+// Storage for original VM execution functions
 static void (*original_zend_execute_ex)(zend_execute_data *execute_data);
 static void (*original_zend_execute_internal)(zend_execute_data *execute_data, zval *return_value);
 
+// Execution interceptor
 ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value)
 {
-    zend_function *zf = execute_data->func;
-    const char *class_name = (zf->common.scope != NULL && zf->common.scope->name != NULL) ? ZSTR_VAL(zf->common.scope->name) : NULL;
-    const char *function_name = zf->common.function_name == NULL ? NULL : ZSTR_VAL(zf->common.function_name);
-    // TODO: Profiling depends on this: internal functions do not have op_array, different output (use smart str?)
-    const char *file_name = internal ? NULL : ZSTR_VAL(zf->op_array.filename);
+    // TODO: Check if function needs to be intercepted
 
-    PHOTON_G(stack_depth)++;
-    struct timespec start;
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
-    // TODO: Need to do this within a try-catch and bailout in case of error
-    // TODO: This is not optimal, I would rather avoid checking for `internal` every time. Use macros instead or inline pre/post?
     if (internal) {
         if (original_zend_execute_internal) {
             original_zend_execute_internal(execute_data, return_value);
@@ -92,141 +77,41 @@ ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute
         original_zend_execute_ex(execute_data);
     }
 
-    struct timespec stop;
-    clock_gettime(CLOCK_MONOTONIC, &stop);
-    uint64_t diff = timespec_ns_diff(&start, &stop);
-    PHOTON_G(stack_depth)--;
+    // TODO: ...
 }
 
+// Wrapper for userland function calls
 ZEND_API void photon_execute_ex(zend_execute_data *execute_data)
 {
     photon_execute_base(0, execute_data, NULL);
 }
 
+// Wrapper for internal function calls
 ZEND_API void photon_execute_internal(zend_execute_data *execute_data, zval *return_value)
 {
     photon_execute_base(1, execute_data, return_value);
 }
 
-static zend_always_inline int extension_loaded(char *extension_name)
-{
-    char *lower_name = zend_str_tolower_dup(extension_name, strlen(extension_name));
-    int result = zend_hash_str_exists(&module_registry, lower_name, strlen(lower_name));
-    efree(lower_name);
-    return result;
-}
-
 PHP_MINIT_FUNCTION(photon)
 {
+    // Read configuration
     REGISTER_INI_ENTRIES();
 
-    PHOTON_G(transaction_log) = fopen("/tmp/photon-txn.log", "a");
-
-    if (0 == PHOTON_G(enable)) {
+    if (PHOTON_NOT_ENABLED) {
         return SUCCESS;
     }
 
-#ifdef ZTS
-    photon_agent_mutex = tsrm_mutex_alloc();
-#endif
+    // Open transaction log
+    // TODO: If log opening failed, log error, disable extension & return early
+    PHOTON_TXN_LOG = fopen(PHOTON_G(transaction_log_path), "a");
 
-    if (extension_loaded("PDO")) {
-        printf("PDO is loaded\n");
-    }
-    if (extension_loaded("Redis")) {
-        printf("Redis is loaded\n");
-    }
+    // Userland constants
+    REGISTER_STRING_CONSTANT("PHOTON_TXN_PROPERTY_APP_NAME", "app_name", CONST_CS | CONST_PERSISTENT);
+    // TODO: The rest of them
 
-    photon_connect_to_agent();
-    photon_configure_interceptors();
-    photon_override_execute();
+    // TODO: Init interceptors
 
-    return SUCCESS;
-}
-
-static int photon_connect_to_agent()
-{
-#ifdef ZTS
-    tsrm_mutex_lock(photon_agent_mutex);
-#endif
-    PHOTON_G(agent_connection) = pemalloc(sizeof(struct agent_connection), 1);
-
-    // TODO: Close & free on shutdown!
-    // TODO: On error - disable extension?
-    // TODO: Refactor: too much similar code
-
-    if (strcmp(PHOTON_G(agent_transport), "tcp") == 0) {
-        // TODO: Handle errors
-        int sd;
-        struct sockaddr_in addr;
-        // TODO: Replace with `getaddrinfo`, see https://www.kutukupret.com/2009/09/28/gethostbyname-vs-getaddrinfo/
-        // TODO: Put pointer into agent connection structure and free at MSHUTDOWN
-        struct hostent *hostname = gethostbyname(PHOTON_G(agent_host));
-
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(PHOTON_G(agent_port));
-        addr.sin_addr.s_addr = *((unsigned long *)hostname->h_addr);
-        sd = socket(AF_INET, SOCK_STREAM, 0);
-        connect(sd, (struct sockaddr*)&addr, sizeof(addr));
-
-        PHOTON_G(agent_connection)->sd = sd;
-        PHOTON_G(agent_connection)->addr_in = addr;
-
-#ifdef ZTS
-        tsrm_mutex_unlock(photon_agent_mutex);
-#endif
-        return SUCCESS;
-    } else if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
-        // TODO: Handle errors
-        int sd;
-        struct sockaddr_in addr;
-
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(PHOTON_G(agent_port));
-        addr.sin_addr.s_addr = inet_addr(PHOTON_G(agent_host));
-        sd = socket(AF_INET, SOCK_DGRAM, 0);
-
-        PHOTON_G(agent_connection)->sd = sd;
-        PHOTON_G(agent_connection)->addr_in = addr;
-
-#ifdef ZTS
-        tsrm_mutex_unlock(photon_agent_mutex);
-#endif
-        return SUCCESS;
-    } else if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
-        // TODO: Handle errors
-        int sd;
-        struct sockaddr_un addr;
-
-        addr.sun_family = AF_UNIX;
-        sd = socket(PF_UNIX, SOCK_STREAM, 0);
-        memset(&addr, 0, sizeof(addr));
-        strcpy(addr.sun_path, PHOTON_G(agent_socket_path));
-        // For SUN_LEN see https://unix.superglobalmegacorp.com/Net2/newsrc/sys/un.h.html
-        connect(sd, (struct sockaddr*)&addr, SUN_LEN(&addr));
-
-        PHOTON_G(agent_connection)->sd = sd;
-        PHOTON_G(agent_connection)->addr_un = addr;
-
-#ifdef ZTS
-        tsrm_mutex_unlock(photon_agent_mutex);
-#endif
-        return SUCCESS;
-    }
-
-    // TODO: Log unknown transport & disable extension
-    return FAILURE;
-}
-
-static int photon_configure_interceptors()
-{
-    // TODO: Configure interceptors for internal & userland functions
-    return SUCCESS;
-}
-
-static int photon_override_execute()
-{
-    // Overload VM execution functions. This allows custom tracing/profiling
+    // Overload VM execution functions
     original_zend_execute_internal = zend_execute_internal;
     original_zend_execute_ex = zend_execute_ex;
     zend_execute_internal = photon_execute_internal;
@@ -235,62 +120,35 @@ static int photon_override_execute()
     return SUCCESS;
 }
 
-PHP_MSHUTDOWN_FUNCTION(photon)
-{
-    UNREGISTER_INI_ENTRIES();
-
-    if (0 == PHOTON_G(enable)) {
-        return SUCCESS;
-    }
-
-    // TODO: Release interceptors, cleanup tracing / profiling structures
-    photon_restore_execute();
-    photon_disconnect_from_agent();
-
-    fclose(PHOTON_G(transaction_log));
-
-    return SUCCESS;
-}
-
-static int photon_disconnect_from_agent()
-{
-    // TODO: Is this condition needed?
-    if (0 == PHOTON_G(enable)) {
-        return SUCCESS;
-    }
-
-    close(PHOTON_G(agent_connection)->sd);
-
-    if (strcmp(PHOTON_G(agent_transport), "tcp") == 0) {
-        // TODO: Anything specific here?
-    } else if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
-        // TODO: Anything specific here?
-    } else if (strcmp(PHOTON_G(agent_transport), "unix") == 0) {
-        // TODO: Anything specific here?
-    }
-
-    // TODO: Do we need to take care of sockaddr inside?
-    pefree(PHOTON_G(agent_connection), 1);
-
-    return SUCCESS;
-}
-
-static int photon_restore_execute()
-{
-    zend_execute_internal = original_zend_execute_internal;
-    zend_execute_ex = original_zend_execute_ex;
-
-    return SUCCESS;
-}
-
 PHP_MINFO_FUNCTION(photon)
 {
+    // TODO: Print actual settings:
     php_info_print_table_start();
     php_info_print_table_header(2, "photon support", "enabled");
     php_info_print_table_row(2, "photon version", PHP_PHOTON_VERSION);
-    php_info_print_table_row(2, "agent transport", PHOTON_G(agent_transport));
-    // TODO: Print all other settings; some are config-dependent (transport -> path or host:port)
+    php_info_print_table_row(2, "transaction log path", PHOTON_G(transaction_log_path));
     php_info_print_table_end();
+}
+
+PHP_MSHUTDOWN_FUNCTION(photon)
+{
+    if (PHOTON_NOT_ENABLED) {
+        return SUCCESS;
+    }
+
+    // Restore original VM execution functions
+    zend_execute_internal = original_zend_execute_internal;
+    zend_execute_ex = original_zend_execute_ex;
+
+    // TODO: Release interceptors
+
+    // Close transaction log
+    fclose(PHOTON_TXN_LOG);
+
+    // Release configuration
+    UNREGISTER_INI_ENTRIES();
+
+    return SUCCESS;
 }
 
 PHP_RINIT_FUNCTION(photon)
@@ -299,316 +157,138 @@ PHP_RINIT_FUNCTION(photon)
     ZEND_TSRMLS_CACHE_UPDATE();
 #endif
 
-    if (0 == PHOTON_G(enable)) {
+    if (PHOTON_NOT_ENABLED) {
         return SUCCESS;
     }
 
-    // TODO: Check SAPI name: profiling & tracing for web & CLI depending on config
-    // TODO: Capture request start time and transaction name (URI or filename)
-    // TODO: Read or create X-Photon-Trace-Id, will be used for tracing
-    // TODO: Init span stack
+    // Initialize transaction stack
+    PHOTON_TXN_STACK = emalloc(sizeof(zend_stack));
+    zend_stack_init(PHOTON_TXN_STACK, sizeof(transaction *));
 
-    // TODO: Move to `photon_transactions_stack_init()` + `photon_transaction_start()`
-    // Watch out: element is a pointer to transaction, not a transaction itself
-    TXN_STACK_INIT;
-
-    struct transaction *t = emalloc(sizeof(struct transaction));
-    // TODO: Initial name?
-    photon_transaction_ctor(t, "whatever", NULL);
-    TXN_STACK_PUSH(t);
-    struct transaction *t2 = emalloc(sizeof(struct transaction));
-    // TODO: Initial name?
-    photon_transaction_ctor(t2, "and-more", NULL);
-    TXN_STACK_PUSH(t2);
-
-    return SUCCESS;
-}
-
-void photon_transaction_dtor(struct transaction *t)
-{
-    efree(t->app_name);
-    efree(t->app_version);
-    efree(t->endpoint_mode);
-    efree(t->endpoint_name);
-}
-
-static int photon_transaction_ctor(struct transaction *t, char *endpoint_name, struct transaction *parent)
-{
-    // Transaction ID
-    uuid_t uuid;
-    uuid_generate_random(uuid);
-    uuid_unparse_lower(uuid, t->id);
-
-    if (NULL == parent) {
-        // Note: trying to modify values read from config will lead to `zend_mm_heap corrupted`.
-        t->app_name = estrdup(PHOTON_G(app_name));
-        t->app_version = estrdup(PHOTON_G(app_version));
-    } else {
-        t->app_name = estrdup(parent->app_name);
-        t->app_version = estrdup(parent->app_version);
-    }
-
-    // TODO: Use passed data (name, parent)
-    // Mode (web or cli)
-    if (
-        strcmp(sapi_module.name, "fpm-fcgi") == 0 ||
-        strcmp(sapi_module.name, "cli-server") == 0 ||
-        strcmp(sapi_module.name, "cgi-fcgi") == 0 ||
-        strcmp(sapi_module.name, "apache") == 0
-    ) {
-        // TODO: Should we add host name to transaction data?
-        t->endpoint_name = estrdup(SG(request_info).request_uri);
-        // TODO: Use enum instead?
-        t->endpoint_mode = estrdup("web");
-    } else if (strcmp(sapi_module.name, "cli") == 0) {
-        // TODO: This is a full file path, resolved in `php_cli.c`. Just script filename should be enough
-        t->endpoint_name = estrdup(SG(request_info).path_translated);
-        // TODO: Use enum instead?
-        t->endpoint_mode = estrdup("cli");
-    }
-
-    // Timestamp, monotonic timer, CPU timer
-    clock_gettime(CLOCK_REALTIME, &(t->timestamp_start));
-    clock_gettime(CLOCK_MONOTONIC, &(t->monotonic_timer_start));
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &(t->cpu_timer_start));
+    // Create root transaction
+    photon_txn_start(NULL);
 
     return SUCCESS;
 }
 
 PHP_RSHUTDOWN_FUNCTION(photon)
 {
-    if (0 == PHOTON_G(enable)) {
+    if (PHOTON_NOT_ENABLED) {
         return SUCCESS;
     }
 
-    // TODO: Main issue: can not properly pop tail, some issues with casting
-    // TODO: Free profiling / tracing info
-    while (!zend_stack_is_empty(TXN_STACK)) {
-        struct transaction *t = TXN_STACK_TOP;
-        photon_transaction_end(t);
-        zend_stack_del_top(TXN_STACK);
+    // Drain transaction stack: will end all pending transactions
+    while (!zend_stack_is_empty(PHOTON_TXN_STACK)) {
+        photon_txn_end();
     }
-    zend_stack_destroy(TXN_STACK);
-    efree(TXN_STACK);
 
-    // TODO: Is immediate fflush required? Or is it enough to do it here, per-request?
-    fflush(PHOTON_G(transaction_log));
+    zend_stack_destroy(PHOTON_TXN_STACK);
+
+    // Force writing transaction entries to disk. Doing it here can save some IO
+    fflush(PHOTON_TXN_LOG);
 
     return SUCCESS;
 }
 
-// TODO: Return positive number: length of list
-static int photon_transaction_end(struct transaction *t)
+static char *photon_get_default_endpoint_name()
 {
-    // TODO: Is this condition needed?
-    if (0 == PHOTON_G(enable)) {
-        return SUCCESS;
+    if (0 == strcmp(sapi_module.name, "cli")) {
+        return *SG(request_info).argv;
     }
 
-    printf("Ending transaction %s\n", t->id);
+    return SG(request_info).request_uri;
+}
 
-    struct timespec monotonic_timer_end;
-    clock_gettime(CLOCK_MONOTONIC, &monotonic_timer_end);
-    uint64_t monotonic_time_elapsed = timespec_ns_diff(&(t->monotonic_timer_start), &monotonic_timer_end);
+static zend_always_inline transaction *photon_get_current_txn()
+{
+    transaction **tp = zend_stack_top(PHOTON_TXN_STACK);
 
-    struct timespec cpu_timer_end;
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_timer_end);
-    uint64_t cpu_time_elapsed = timespec_ns_diff(&(t->cpu_timer_start), &cpu_timer_end);
+    if (NULL == tp) {
+        return NULL;
+    }
 
-    uint64_t timestamp = timespec_to_ns(&(t->timestamp_start));
+    return *tp;
+}
 
+static void photon_txn_start(char *endpoint_name)
+{
+    transaction *next = emalloc(sizeof(transaction));
+    transaction *prev = photon_get_current_txn();
+
+    // Generate ID
+    // See https://stackoverflow.com/questions/51053568/generating-a-random-uuid-in-c
+    uuid_t uuid;
+    uuid_generate_random(uuid);
+    uuid_unparse_lower(uuid, next->id);
+
+    // Measure time
+    next->timestamp = clock_gettime_as_ns(CLOCK_REALTIME);
+    next->timer_monotonic = clock_gettime_as_ns(CLOCK_MONOTONIC);
+    next->timer_cpu = clock_gettime_as_ns(CLOCK_THREAD_CPUTIME_ID);
+
+    // TODO: If prev exists, copy properties. Otherwise this is a root transaction, resolve from environment
+    if (NULL != endpoint_name) {
+        next->endpoint_name = estrdup(endpoint_name);
+    } else {
+        next->endpoint_name = estrdup(photon_get_default_endpoint_name());
+    }
+
+    if (NULL != prev) {
+        next->app_name = estrdup(prev->app_name);
+        next->app_version = estrdup(prev->app_version);
+    } else {
+        // TODO: Defaults?
+        next->app_name = estrdup("app");
+        next->app_version = estrdup("0.0.1");
+    }
+
+    // Push result onto transaction stack (watch out: double pointer here)
+    zend_stack_push(PHOTON_TXN_STACK, &next);
+}
+
+static void photon_txn_dtor(transaction *txn)
+{
+    efree(txn->app_name);
+    efree(txn->app_version);
+    efree(txn->endpoint_name);
+}
+
+static void photon_txn_end()
+{
+    transaction *txn = photon_get_current_txn();
+
+    // Build report line
     // See http://www.phpinternalsbook.com/php7/internal_types/strings/printing_functions.html
-    char *result;
-    int length;
-
-    // TODO: Spaces in strings must be escaped
-    length = spprintf(
-        &result, 0,
-        // `i` postfix is used in InfluxDB to force integer
-        "txn,app=%s,ver=%s,mode=%s,endpoint=%s id=%s,tt=%"PRIu64"i,tc=%"PRIu64"i,mu=%lui,mr=%lui %"PRIu64"\n",
-        t->app_name,
-        t->app_version,
-        // TODO: Use enum instead (reverse map into string)?
-        t->endpoint_mode,
-        t->endpoint_name,
-        t->id,
-        monotonic_time_elapsed,
-        cpu_time_elapsed,
-        zend_memory_peak_usage(0),
-        zend_memory_peak_usage(1),
-        timestamp
+    // TODO: Output all data
+    char *data;
+    int length = spprintf(
+        &data, 0,
+        "%s %s@%s %s %s %"PRIu64" %"PRIu64" %zu %zu %"PRIu64"\n",
+        txn->id,
+        txn->app_name,
+        txn->app_version,
+        sapi_module.name,
+        txn->endpoint_name,
+        clock_gettime_as_ns(CLOCK_MONOTONIC) - txn->timer_monotonic,
+        clock_gettime_as_ns(CLOCK_THREAD_CPUTIME_ID) - txn->timer_cpu,
+        zend_memory_usage(0),
+        zend_memory_usage(1),
+        txn->timestamp
     );
 
-//    int rc = photon_send_to_agent(result, length);
-    fwrite(result, 1, length, PHOTON_G(transaction_log));
+    // Write into log file
+    fwrite(data, 1, length, PHOTON_TXN_LOG);
 
-    efree(result);
-
-    return SUCCESS;
+    // Remove transaction from stack & destroy
+    zend_stack_del_top(PHOTON_TXN_STACK);
+    photon_txn_dtor(txn);
 }
 
-static int photon_send_to_agent(char *data, size_t length)
-{
-    // TODO: Is this condition needed?
-    if (0 == PHOTON_G(enable)) {
-        return -1;
-    }
-
-    // Note that sender may buffer data in order to optimize performance.
-    // We're okay with it, agent is capable of splitting messages.
-    // See https://stackoverflow.com/questions/8421848/send-data-in-separate-tcp-segments-without-being-merged-by-the-tcp-stack
-
-    if (strcmp(PHOTON_G(agent_transport), "udp") == 0) {
-        // TODO: Handle error
-        return sendto(
-            PHOTON_G(agent_connection)->sd,
-            data,
-            length + 1,
-            0,
-            (struct sockaddr*)&PHOTON_G(agent_connection)->addr_in,
-            sizeof(PHOTON_G(agent_connection)->addr_in)
-        );
-    }
-
-    // UNIX and TCP have identical `send`
-    // TODO: Handle error
-    return send(PHOTON_G(agent_connection)->sd, data, length, 0);
-}
-
-PHP_FUNCTION(photon_get_app_name)
-{
-    RETURN_TRUE;
-//    RETURN_STRING(PHOTON_G(current_transaction)->app_name);
-}
-
-ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_app_name, 0, 0, 1)
-    ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
-ZEND_END_ARG_INFO()
-
-PHP_FUNCTION(photon_set_app_name)
-{
-    zend_string *name = NULL;
-
-    ZEND_PARSE_PARAMETERS_START(0, 1)
-        Z_PARAM_STR_EX(name, 1, 0)
-    ZEND_PARSE_PARAMETERS_END();
-
-    if (ZSTR_LEN(name) == 0) {
-        RETURN_FALSE;
-    }
-
-    // TODO: Should we check for null?
-//    struct transaction *ct = PHOTON_G(current_transaction);
-//    efree(ct->app_name);
-//    ct->app_name = estrdup(ZSTR_VAL(name));
-//    zend_string_release(name);
-
-    RETURN_TRUE;
-}
-
-PHP_FUNCTION(photon_get_app_version)
-{
-    RETURN_TRUE;
-//    RETURN_STRING(PHOTON_G(current_transaction)->app_version);
-}
-
-ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_app_version, 0, 0, 1)
-    ZEND_ARG_TYPE_INFO(0, version, IS_STRING, 0)
-ZEND_END_ARG_INFO()
-
-PHP_FUNCTION(photon_set_app_version)
-{
-    zend_string *version = NULL;
-
-    ZEND_PARSE_PARAMETERS_START(0, 1)
-        Z_PARAM_STR_EX(version, 1, 0)
-    ZEND_PARSE_PARAMETERS_END();
-
-    if (ZSTR_LEN(version) == 0) {
-        RETURN_FALSE;
-    }
-
-//    // TODO: Should we check for null?
-//    struct transaction *ct = PHOTON_G(current_transaction);
-//    efree(ct->app_version);
-//    ct->app_version = estrdup(ZSTR_VAL(version));
-//    zend_string_release(version);
-
-    RETURN_TRUE;
-}
-
-PHP_FUNCTION(photon_get_endpoint_name)
-{
-    RETURN_TRUE;
-//    RETURN_STRING(PHOTON_G(current_transaction)->endpoint_name);
-}
-
-ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_endpoint_name, 0, 0, 1)
-    ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
-ZEND_END_ARG_INFO()
-
-PHP_FUNCTION(photon_set_endpoint_name)
-{
-    zend_string *name = NULL;
-
-    ZEND_PARSE_PARAMETERS_START(0, 1)
-        Z_PARAM_STR_EX(name, 1, 0)
-    ZEND_PARSE_PARAMETERS_END();
-
-//    // TODO: Should we check for null?
-//    struct transaction *ct = PHOTON_G(current_transaction);
-//    efree(ct->endpoint_name);
-//    ct->endpoint_name = estrdup(ZSTR_VAL(name));
-//    zend_string_release(name);
-
-    RETURN_TRUE;
-}
-
-PHP_FUNCTION(photon_get_transaction_id)
-{
-    RETURN_TRUE;
-//    RETURN_STRING(PHOTON_G(current_transaction)->id);
-}
-
-PHP_FUNCTION(photon_get_trace_id)
-{
-    // TODO: Return a string from UUID
-}
-
-ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_trace_id, 0, 0, 1)
-    ZEND_ARG_TYPE_INFO(0, id, IS_STRING, 0)
-ZEND_END_ARG_INFO()
-
-PHP_FUNCTION(photon_set_trace_id)
-{
-    zend_string *id = NULL;
-
-    ZEND_PARSE_PARAMETERS_START(0, 1)
-        Z_PARAM_STR_EX(id, 1, 0)
-    ZEND_PARSE_PARAMETERS_END();
-
-    // TODO: Set it
-
-    RETURN_TRUE;
-}
-
-/**
- * A list of extension's functions exposed to developers.
- */
 static const zend_function_entry photon_functions[] = {
-    PHP_FE(photon_get_app_name,      NULL)
-    PHP_FE(photon_set_app_name,      arginfo_photon_set_app_name)
-    PHP_FE(photon_get_app_version,   NULL)
-    PHP_FE(photon_set_app_version,   arginfo_photon_set_app_version)
-    PHP_FE(photon_get_endpoint_name, NULL)
-    PHP_FE(photon_set_endpoint_name, arginfo_photon_set_endpoint_name)
-    PHP_FE(photon_get_trace_id,      NULL)
-    PHP_FE(photon_set_trace_id,      arginfo_photon_set_trace_id)
     PHP_FE_END
 };
 
-static const zend_module_dep molten_deps[] = {
-    // TODO: Declare all dependencies, maybe using `HAS_X`: pdo, memcache, memcached, redis, amqp (?)
+static const zend_module_dep photon_deps[] = {
     ZEND_MOD_REQUIRED("curl")
 };
 
