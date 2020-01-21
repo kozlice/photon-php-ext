@@ -24,6 +24,7 @@ static MUTEX_T photon_agent_mutex = NULL;
 
 #include "php.h"
 #include "ext/standard/info.h"
+#include "ext/standard/php_string.h"
 #include "php_photon.h"
 #include "zend_extensions.h"
 #include "Zend/zend_llist.h"
@@ -117,6 +118,8 @@ static zend_always_inline int extension_loaded(char *extension_name)
 PHP_MINIT_FUNCTION(photon)
 {
     REGISTER_INI_ENTRIES();
+
+    PHOTON_G(transaction_log) = fopen("/tmp/photon-txn.log", "a");
 
     if (0 == PHOTON_G(enable)) {
         return SUCCESS;
@@ -242,6 +245,8 @@ PHP_MSHUTDOWN_FUNCTION(photon)
     // TODO: Release interceptors, cleanup tracing / profiling structures
     photon_restore_execute();
     photon_disconnect_from_agent();
+
+    fclose(PHOTON_G(transaction_log));
 
     return SUCCESS;
 }
@@ -384,6 +389,9 @@ PHP_RSHUTDOWN_FUNCTION(photon)
         zend_llist_remove_tail(tl);
     }
 
+    // TODO: Is immediate fflush required? Or is it enough to do it here, per-request?
+    fflush(PHOTON_G(transaction_log));
+
     return SUCCESS;
 }
 
@@ -429,7 +437,8 @@ static int photon_transaction_end(struct transaction *t)
         timestamp
     );
 
-    int rc = photon_send_to_agent(result, length);
+//    int rc = photon_send_to_agent(result, length);
+    fwrite(result, 1, length, PHOTON_G(transaction_log));
 
     efree(result);
 

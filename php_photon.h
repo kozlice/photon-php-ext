@@ -98,6 +98,8 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     // Request-specific: `emalloc` during RINIT and `efree` at RSHUTDOWN
     zend_llist transactions_list;
 
+    FILE *transaction_log;
+
     // TODO: Request stats (memory, CPU & time, trace ID)
     // TODO: Profiling stack/log (class+function, stack depth, execution time + tags)
     // TODO: This is temporary, need to move to profiling
