@@ -325,8 +325,10 @@ zend_module_entry photon_module_entry = {
     PHP_RSHUTDOWN(photon),            /* PHP_RSHUTDOWN - Request shutdown */
     PHP_MINFO(photon),                /* PHP_MINFO - Module info */
     PHP_PHOTON_VERSION,               /* Extension version */
-    ZEND_MODULE_GLOBALS(photon),      /* */
-    NULL,                             /* */
+    PHP_MODULE_GLOBALS(photon),       /* */
+    NULL,                             /* No PHP_GINIT */
+    NULL,                             /* No PHP_GSHUTDOWN */
+    NULL,                             /* No post-deactivate function */
     STANDARD_MODULE_PROPERTIES_EX
 };
 
