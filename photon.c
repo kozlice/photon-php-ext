@@ -63,7 +63,7 @@ static void (*original_zend_execute_ex)(zend_execute_data *execute_data);
 static void (*original_zend_execute_internal)(zend_execute_data *execute_data, zval *return_value);
 
 // Execution interceptor
-ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value)
+ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value)
 {
     // TODO: Check if function needs to be intercepted
     zend_function *zf = execute_data->func;
@@ -89,13 +89,13 @@ ZEND_API zend_always_inline void photon_execute_base(char internal, zend_execute
 }
 
 // Wrapper for userland function calls
-ZEND_API void photon_execute_ex(zend_execute_data *execute_data)
+ZEND_API static void photon_execute_ex(zend_execute_data *execute_data)
 {
     photon_execute_base(0, execute_data, NULL);
 }
 
 // Wrapper for internal function calls
-ZEND_API void photon_execute_internal(zend_execute_data *execute_data, zval *return_value)
+ZEND_API static void photon_execute_internal(zend_execute_data *execute_data, zval *return_value)
 {
     photon_execute_base(1, execute_data, return_value);
 }
@@ -325,7 +325,9 @@ zend_module_entry photon_module_entry = {
     PHP_RSHUTDOWN(photon),            /* PHP_RSHUTDOWN - Request shutdown */
     PHP_MINFO(photon),                /* PHP_MINFO - Module info */
     PHP_PHOTON_VERSION,               /* Extension version */
-    STANDARD_MODULE_PROPERTIES        /* TODO: See if we need to define the rest fields */
+    ZEND_MODULE_GLOBALS(photon),      /* */
+    NULL,                             /* */
+    STANDARD_MODULE_PROPERTIES_EX
 };
 
 #ifdef COMPILE_DL_PHOTON
