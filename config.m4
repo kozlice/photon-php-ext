@@ -4,10 +4,16 @@ PHP_ARG_ENABLE([photon],
     [Enable photon support])],
   [no])
 
+PHP_ARG_WITH([libuuid-dir],
+  [],
+  [AS_HELP_STRING([[--with-libuuid-dir[=DIR]]],
+    [path to libuuid headers])],
+  [no])
+
 if test "$PHP_PHOTON" != "no"; then
-  # Check for libuuid
+  dnl Check for libuuid
   AC_MSG_CHECKING([for the location of libuuid])
-  for dir in /usr/local /usr; do
+  for dir in $PHP_LIBUUID_DIR /usr/local /usr; do
     if test -f "$dir/include/uuid/uuid.h"; then
       LIBUUID_DIR="$dir"
     fi
