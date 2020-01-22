@@ -62,8 +62,6 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     HashTable  *interceptor_table;
 ZEND_END_MODULE_GLOBALS(photon)
 
-ZEND_EXTERN_MODULE_GLOBALS(photon)
-
 // Define globals accessor
 #ifdef ZTS
 #define PHOTON_G(v) TSRMG(photon_globals_id, zend_photon_globals *, v)
