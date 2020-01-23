@@ -69,9 +69,12 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
     zend_function *zf = execute_data->func;
     char *function_name = zf->common.function_name == NULL ? NULL : ZSTR_VAL(zf->common.function_name);
     if (NULL != function_name) {
-        interceptor *itc = zend_hash_str_find_ptr(PHOTON_INTERCEPTORS, function_name, strlen(function_name));
-        if (NULL != itc && NULL != itc->fn) {
-            itc->fn(execute_data);
+        interceptor **itc_ptr = zend_hash_str_find_ptr(PHOTON_INTERCEPTORS, function_name, strlen(function_name));
+        if (NULL != itc_ptr) {
+            interceptor *itc = *itc_ptr;
+            if (NULL != itc && NULL != itc->fn) {
+                itc->fn(execute_data);
+            }
         }
     }
 
@@ -126,10 +129,10 @@ PHP_MINIT_FUNCTION(photon)
     // TODO: Init interceptors
     PHOTON_INTERCEPTORS = pemalloc(sizeof(HashTable), 1);
     zend_hash_init(PHOTON_INTERCEPTORS, 128, NULL /* TODO: hash function? */, NULL /* TODO: element destructor? */, 1);
-    interceptor *itc = (interceptor *) pemalloc(sizeof(interceptor), 1);
+    interceptor *itc = (interceptor *) pemalloc(sizeof(interceptor *), 1);
     itc->name = "whatever";
     itc->fn = &curl_exec_interceptor;
-    zend_hash_str_add_mem(PHOTON_INTERCEPTORS, "curl_exec", strlen("curl_exec"), itc, sizeof(interceptor));
+    zend_hash_str_add_mem(PHOTON_INTERCEPTORS, "curl_exec", strlen("curl_exec"), &itc, sizeof(interceptor));
 
     // Overload VM execution functions
     original_zend_execute_internal = zend_execute_internal;
@@ -142,7 +145,7 @@ PHP_MINIT_FUNCTION(photon)
 
 PHP_MINFO_FUNCTION(photon)
 {
-    // TODO: Print actual settings:
+    // TODO: Print actual settings
     php_info_print_table_start();
     php_info_print_table_header(2, "photon support", "enabled");
     php_info_print_table_row(2, "photon version", PHP_PHOTON_VERSION);
