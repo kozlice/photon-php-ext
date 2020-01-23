@@ -4,8 +4,30 @@ This extension gathers data and ships it to [Photon](https://github.com/kozlice/
 
 ## Installation
 
-#### Compiling from source
+Extension depends on shared `libuuid`, so you need it installed:
 ```bash
+# Debian
+apt-get install libuuid1
+# CentOS
+yum install libuuid
+```
+
+#### Building from source
+
+Install dependencies:
+
+```bash
+# Debian
+apt-get install uuid-dev
+# CentOS
+yum install libuuid-devel
+```
+
+Clone & build:
+
+```bash
+git clone https://github.com/kozlice/photon-php-ext
+cd photon-php-ext
 phpize --clean
 phpize
 ./configure
