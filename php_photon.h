@@ -46,11 +46,11 @@ typedef struct _transaction {
     uint64_t timer_cpu;
 } transaction;
 
-typedef void (*callback)(zend_execute_data *);
+typedef void (*interceptor_handler)(zend_execute_data *);
 
 typedef struct _interceptor {
     char *name;
-    callback fn;
+    interceptor_handler fn;
 } interceptor;
 
 ZEND_BEGIN_MODULE_GLOBALS(photon)
@@ -92,6 +92,8 @@ static void photon_txn_start(char *endpoint_name);
 static void photon_txn_end();
 static void photon_txn_dtor(transaction *txn);
 static zend_always_inline transaction *photon_get_current_txn();
+static void photon_interceptor_add(char *name, interceptor_handler fn);
+static void photon_interceptor_dtor(zval *entry);
 static char *photon_get_default_endpoint_name();
 
 PHP_MINIT_FUNCTION(photon);

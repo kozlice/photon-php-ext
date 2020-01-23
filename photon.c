@@ -128,11 +128,8 @@ PHP_MINIT_FUNCTION(photon)
 
     // TODO: Init interceptors
     PHOTON_INTERCEPTORS = pemalloc(sizeof(HashTable), 1);
-    zend_hash_init(PHOTON_INTERCEPTORS, 128, NULL /* TODO: hash function? */, NULL /* TODO: element destructor? */, 1);
-    interceptor *itc = (interceptor *) pemalloc(sizeof(interceptor *), 1);
-    itc->name = "whatever";
-    itc->fn = &curl_exec_interceptor;
-    zend_hash_str_add_mem(PHOTON_INTERCEPTORS, "curl_exec", strlen("curl_exec"), &itc, sizeof(interceptor));
+    zend_hash_init(PHOTON_INTERCEPTORS, 128, NULL /* TODO: hash function? */, photon_interceptor_dtor, 1);
+    photon_interceptor_add("curl_exec", &curl_exec_interceptor);
 
     // Overload VM execution functions
     original_zend_execute_internal = zend_execute_internal;
@@ -213,6 +210,22 @@ PHP_RSHUTDOWN_FUNCTION(photon)
     fflush(PHOTON_TXN_LOG);
 
     return SUCCESS;
+}
+
+static void photon_interceptor_add(char *name, interceptor_handler fn)
+{
+    interceptor *itc = (interceptor *) pemalloc(sizeof(interceptor *), 1);
+    itc->name = pestrdup(name, 1);
+    itc->fn = fn;
+    zend_hash_str_add_mem(PHOTON_INTERCEPTORS, name, strlen(name), &itc, sizeof(interceptor *));
+}
+
+static void photon_interceptor_dtor(zval *entry)
+{
+    // TODO: Do we need to make sure it's not NULL?
+    interceptor *itc = *(interceptor **)entry;
+    pefree(itc->name, 1);
+    pefree(itc, 1);
 }
 
 static char *photon_get_default_endpoint_name()
