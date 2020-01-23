@@ -62,17 +62,19 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     HashTable  *interceptor_table;
 ZEND_END_MODULE_GLOBALS(photon)
 
+ZEND_EXTERN_MODULE_GLOBALS(photon)
+
 // Define globals accessor
-// Note: spaces are required if you don't use `-std=C99`
+// Note: spaces are required
 #ifdef ZTS
 # define PHOTON_G(v) TSRMG(photon_globals_id, photon_globals *, v)
 #else
 # define PHOTON_G(v) (photon_globals.v)
 #endif
 
-#define PHOTON_NOT_ENABLED 0 == PHOTON_G(enable)
-#define PHOTON_TXN_LOG PHOTON_G(transaction_log)
-#define PHOTON_TXN_STACK PHOTON_G(transaction_stack)
+#define PHOTON_NOT_ENABLED  0 == PHOTON_G(enable)
+#define PHOTON_TXN_LOG      PHOTON_G(transaction_log)
+#define PHOTON_TXN_STACK    PHOTON_G(transaction_stack)
 #define PHOTON_INTERCEPTORS PHOTON_G(interceptor_table)
 
 ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value);
