@@ -28,10 +28,15 @@ if test "$PHP_PHOTON" != "no"; then
   PHP_CHECK_FUNC_LIB(uuid_unparse_lower, uuid)
 
   AC_CHECK_HEADER([uuid/uuid.h], [], AC_MSG_ERROR('uuid/uuid.h' header not found))
-  dnl Do not use `PHP_ADD_LIBRARY_WITH_PATH`: it's not independent on macOS. Just add location as a _possible_ one
-  dnl so that it would be picked up in Linux.
-  PHP_ADD_LIBPATH($LIBUUID_DIR/$PHP_LIBDIR)
-  PHP_ADD_LIBRARY(uuid)
+  dnl On Linux this directory exists and we can add library with specific path
+  dnl On macOS these are provided with libsystem
+  dnl See https://bugs.freedesktop.org/show_bug.cgi?id=105366
+  if test -d "$LIUBUUID_DIR/$PHP_LIBDIR"; then
+    PHP_ADD_LIBRARY_WITH_PATH(uuid, $LIBUUID_DIR/$PHP_LIBDIR, PHOTON_SHARED_LIBADD)
+  else
+    PHP_ADD_LIBPATH($LIBUUID_DIR/$PHP_LIBDIR)
+    PHP_ADD_LIBRARY(uuid)
+  fi
   PHP_SUBST(PHOTON_SHARED_LIBADD)
 
   AC_DEFINE(HAVE_PHOTON, 1, [ Have photon support ])
