@@ -160,7 +160,7 @@ PHP_MSHUTDOWN_FUNCTION(photon)
     zend_execute_internal = original_zend_execute_internal;
     zend_execute_ex = original_zend_execute_ex;
 
-    // TODO: Release interceptors - need destructors for every one of them
+    // Release interceptors: elements will be passed to `photon_interceptor_dtor`, so only free the hashtable itself
     pefree(PHOTON_INTERCEPTORS, 1);
 
     // Close transaction log
