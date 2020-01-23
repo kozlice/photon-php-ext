@@ -63,6 +63,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
 ZEND_END_MODULE_GLOBALS(photon)
 
 // Define globals accessor
+// Note: spaces are required if you don't use `-std=C99`
 #ifdef ZTS
 # define PHOTON_G(v) TSRMG(photon_globals_id, photon_globals *, v)
 #else
