@@ -35,7 +35,7 @@ ZEND_DECLARE_MODULE_GLOBALS(photon)
 
 PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("photon.enable",               "1",                   PHP_INI_SYSTEM, OnUpdateBool,   enable,               zend_photon_globals, photon_globals)
-    // TODO: Change default path to `/var/log/photon-php-transactions.log` or something like that
+    // TODO: Change default path to `/var/log/photon-php/transactions.log` or something like that
     STD_PHP_INI_ENTRY("photon.transaction_log_path", "/tmp/photon-txn.log", PHP_INI_SYSTEM, OnUpdateString, transaction_log_path, zend_photon_globals, photon_globals)
 PHP_INI_END()
 

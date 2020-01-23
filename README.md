@@ -44,7 +44,7 @@ All values in these example are the default values.
 photon.enable = 1;
 
 ; Path to transaction log.
-photon.transaction_log_path = "/var/log/photon-php-transaction.log";
+photon.transaction_log_path = "/var/log/photon-php/transaction.log";
 
 ; Whether to enable or not profiling in web and CLI.
 photon.profiling_web = 1;
