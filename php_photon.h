@@ -67,7 +67,7 @@ ZEND_EXTERN_MODULE_GLOBALS(photon)
 // Define globals accessor
 // Note: spaces are required
 #ifdef ZTS
-# define PHOTON_G(v) TSRMG(photon_globals_id, photon_globals *, v)
+# define PHOTON_G(v) ZEND_MODULE_GLOBALS_ACCESSOR(photon, v)
 #else
 # define PHOTON_G(v) (photon_globals.v)
 #endif
