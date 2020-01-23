@@ -63,7 +63,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     HashTable  *interceptor_table;
 
     // Per request, using `emalloc`
-    zend_stack *transaction_stack;
+    zend_ptr_stack *transaction_stack;
 ZEND_END_MODULE_GLOBALS(photon)
 
 ZEND_EXTERN_MODULE_GLOBALS(photon)

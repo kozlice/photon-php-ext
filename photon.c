@@ -20,7 +20,7 @@
 
 #include "php.h"
 #include "ext/standard/info.h"
-#include "Zend/zend_stack.h"
+#include "Zend/zend_ptr_stack.h"
 #include "SAPI.h"
 #include "php_photon.h"
 
@@ -183,9 +183,8 @@ PHP_RINIT_FUNCTION(photon)
     }
 
     // Initialize transaction stack
-    // TODO: try `zend_ptr_stack_init` instead
-    PHOTON_TXN_STACK = emalloc(sizeof(zend_stack));
-    zend_stack_init(PHOTON_TXN_STACK, sizeof(transaction *));
+    PHOTON_TXN_STACK = emalloc(sizeof(zend_ptr_stack));
+    zend_ptr_stack_init(PHOTON_TXN_STACK);
 
     // Create root transaction
     photon_txn_start(NULL);
@@ -200,11 +199,11 @@ PHP_RSHUTDOWN_FUNCTION(photon)
     }
 
     // Drain transaction stack: will end all pending transactions
-    while (!zend_stack_is_empty(PHOTON_TXN_STACK)) {
+    while (zend_ptr_stack_num_elements(PHOTON_TXN_STACK)) {
         photon_txn_end();
     }
 
-    zend_stack_destroy(PHOTON_TXN_STACK);
+    zend_ptr_stack_destroy(PHOTON_TXN_STACK);
     efree(PHOTON_TXN_STACK);
 
     // Force writing transaction entries to disk. Doing it here can save some IO
@@ -240,13 +239,11 @@ static char *photon_get_default_endpoint_name()
 
 static zend_always_inline transaction *photon_get_current_txn()
 {
-    transaction **tp = zend_stack_top(PHOTON_TXN_STACK);
-
-    if (NULL == tp) {
-        return NULL;
+    if (zend_ptr_stack_num_elements(PHOTON_TXN_STACK)) {
+        return zend_ptr_stack_top(PHOTON_TXN_STACK);
     }
 
-    return *tp;
+    return NULL;
 }
 
 static void photon_txn_start(char *endpoint_name)
@@ -281,8 +278,8 @@ static void photon_txn_start(char *endpoint_name)
         next->app_version = estrdup("0.0.1");
     }
 
-    // Push result onto transaction stack (watch out: double pointer here)
-    zend_stack_push(PHOTON_TXN_STACK, &next);
+    // Push pointer to the transaction onto stack
+    zend_ptr_stack_push(PHOTON_TXN_STACK, (void *)next);
 }
 
 static void photon_txn_dtor(transaction *txn)
@@ -294,7 +291,7 @@ static void photon_txn_dtor(transaction *txn)
 
 static void photon_txn_end()
 {
-    transaction *txn = photon_get_current_txn();
+    transaction *txn = zend_ptr_stack_pop(PHOTON_TXN_STACK);
 
     // Build report line
     // See http://www.phpinternalsbook.com/php7/internal_types/strings/printing_functions.html
@@ -319,8 +316,6 @@ static void photon_txn_end()
     // Write into log file
     fwrite(data, 1, length, PHOTON_TXN_LOG);
 
-    // Remove transaction from stack & destroy
-    zend_stack_del_top(PHOTON_TXN_STACK);
     photon_txn_dtor(txn);
     efree(txn);
 }
