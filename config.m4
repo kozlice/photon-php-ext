@@ -31,7 +31,6 @@ if test "$PHP_PHOTON" != "no"; then
   PHP_SUBST(PHOTON_SHARED_LIBADD)
   PHP_ADD_LIBRARY_WITH_PATH(uuid, $LIBUUID_DIR/$PHP_LIBDIR, PHOTON_SHARED_LIBADD)
 
-  dnl In case of no dependencies
   AC_DEFINE(HAVE_PHOTON, 1, [ Have photon support ])
 
   PHP_NEW_EXTENSION(photon, photon.c, $ext_shared)
