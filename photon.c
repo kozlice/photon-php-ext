@@ -298,16 +298,17 @@ static void photon_txn_end()
 
     // Build report line
     // See http://www.phpinternalsbook.com/php7/internal_types/strings/printing_functions.html
-    // TODO: Output all data
     char *data;
+    // TODO: This call allocates `smart_str` that is lost
+    // TODO: Need to escape double quotes
     int length = spprintf(
         &data, 0,
-        "%s %s@%s %s %s %"PRIu64" %"PRIu64" %zu %zu %"PRIu64"\n",
-        txn->id,
+        "%s,%s,%s,%s,%s,%"PRIu64",%"PRIu64",%zu,%zu,%"PRIu64"\n",
         txn->app_name,
         txn->app_version,
         sapi_module.name,
         txn->endpoint_name,
+        txn->id,
         clock_gettime_as_ns(CLOCK_MONOTONIC) - txn->timer_monotonic,
         clock_gettime_as_ns(CLOCK_THREAD_CPUTIME_ID) - txn->timer_cpu,
         zend_memory_usage(0),
