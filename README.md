@@ -1,6 +1,6 @@
 # PHP extension for Photon
 
-This extension gathers data and ships it to [Photon](https://github.com/kozlice/photon).
+This extension collects data for [Photon](https://github.com/kozlice/photon).
 
 ## Installation
 
