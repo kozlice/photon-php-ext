@@ -104,7 +104,7 @@ ZEND_API static void photon_execute_internal(zend_execute_data *execute_data, zv
 }
 
 // TODO: All interceptors should have same signature
-void curl_exec_interceptor(zend_execute_data *execute_data)
+void curl_exec_interceptor_callback(zend_execute_data *execute_data)
 {
     puts("Stuff?..");
 }
@@ -126,10 +126,13 @@ PHP_MINIT_FUNCTION(photon)
     REGISTER_STRING_CONSTANT("PHOTON_TXN_PROPERTY_APP_NAME", "app_name", CONST_CS | CONST_PERSISTENT);
     // TODO: The rest of them
 
-    // TODO: Init interceptors
+    // Init interceptors
+    // TODO: See if we can make it work faster by using a custom hash function
     PHOTON_INTERCEPTORS = pemalloc(sizeof(HashTable), 1);
-    zend_hash_init(PHOTON_INTERCEPTORS, 128, NULL /* TODO: hash function? */, photon_interceptor_dtor, 1);
-    photon_interceptor_add("curl_exec", &curl_exec_interceptor);
+    zend_hash_init(PHOTON_INTERCEPTORS, 128, NULL, photon_interceptor_dtor, 1);
+
+    // TODO: Define actual interceptors
+    photon_interceptor_add("curl_exec", &curl_exec_interceptor_callback);
 
     // Overload VM execution functions
     original_zend_execute_internal = zend_execute_internal;
