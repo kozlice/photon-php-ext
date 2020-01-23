@@ -205,6 +205,7 @@ PHP_RSHUTDOWN_FUNCTION(photon)
     }
 
     zend_stack_destroy(PHOTON_TXN_STACK);
+    efree(PHOTON_TXN_STACK);
 
     // Force writing transaction entries to disk. Doing it here can save some IO
     fflush(PHOTON_TXN_LOG);
@@ -320,6 +321,7 @@ static void photon_txn_end()
     // Remove transaction from stack & destroy
     zend_stack_del_top(PHOTON_TXN_STACK);
     photon_txn_dtor(txn);
+    efree(txn);
 }
 
 static const zend_function_entry photon_functions[] = {
