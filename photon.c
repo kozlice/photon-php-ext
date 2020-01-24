@@ -338,6 +338,7 @@ static void photon_txn_start(char *endpoint_name)
 
 static void photon_txn_dtor(transaction *txn)
 {
+    efree(txn->id);
     efree(txn->app_name);
     efree(txn->app_version);
     efree(txn->endpoint_name);
