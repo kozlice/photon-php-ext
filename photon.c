@@ -21,6 +21,7 @@
 #include "php.h"
 #include "ext/standard/info.h"
 #include "Zend/zend_ptr_stack.h"
+#include "Zend/zend_smart_string.h"
 #include "SAPI.h"
 #include "php_photon.h"
 
@@ -58,7 +59,7 @@ static zend_always_inline int extension_loaded(char *extension_name)
     return result;
 }
 
-// Storage for original VM execution functions
+// Will store original VM execution functions
 static void (*original_zend_execute_ex)(zend_execute_data *execute_data);
 static void (*original_zend_execute_internal)(zend_execute_data *execute_data, zval *return_value);
 
@@ -67,9 +68,27 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
 {
     // TODO: Check if function needs to be intercepted
     zend_function *zf = execute_data->func;
-    char *function_name = zf->common.function_name == NULL ? NULL : ZSTR_VAL(zf->common.function_name);
+
+    const char *class_name = (zf->common.scope != NULL && zf->common.scope->name != NULL) ? ZSTR_VAL(zf->common.scope->name) : NULL;
+    const char *function_name = zf->common.function_name == NULL ? NULL : ZSTR_VAL(zf->common.function_name);
+
+    // Use `smart_string`: it has `char *` as internal storage, while `smart_str` uses `zend_string`
+    smart_string itc_name = {0};
+
+    if (NULL != class_name) {
+        // +1 is for separator between class & method name
+        smart_string_appends(&itc_name, class_name);
+        smart_string_appendc(&itc_name, '#');
+    }
+
     if (NULL != function_name) {
-        interceptor **itc_ptr = zend_hash_str_find_ptr(PHOTON_INTERCEPTORS, function_name, strlen(function_name));
+        smart_string_appends(&itc_name, function_name);
+    }
+
+    smart_string_0(&itc_name);
+
+    if (itc_name.len) {
+        interceptor **itc_ptr = zend_hash_str_find_ptr(PHOTON_INTERCEPTORS, itc_name.c, itc_name.len);
         if (NULL != itc_ptr) {
             interceptor *itc = *itc_ptr;
             if (NULL != itc && NULL != itc->fn) {
@@ -87,6 +106,8 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
     } else {
         original_zend_execute_ex(execute_data);
     }
+
+    smart_string_free(&itc_name);
 
     // TODO: ...
 }
