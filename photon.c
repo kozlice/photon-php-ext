@@ -107,9 +107,11 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
         original_zend_execute_ex(execute_data);
     }
 
-    smart_string_free(&itc_name);
-
     // TODO: ...
+
+    efree(class_name);
+    efree(function_name);
+    smart_string_free(&itc_name);
 }
 
 // Wrapper for userland function calls
