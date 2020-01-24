@@ -87,11 +87,13 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
     }
 
     smart_string_0(&itc_name);
+    interceptor *itc = NULL;
 
     if (itc_name.len) {
         interceptor **itc_ptr = zend_hash_str_find_ptr(PHOTON_INTERCEPTORS, itc_name.c, itc_name.len);
         if (NULL != itc_ptr) {
-            interceptor *itc = *itc_ptr;
+            itc = *itc_ptr;
+            // TODO: Split callback into before & after
             if (NULL != itc && NULL != itc->fn) {
                 itc->fn(execute_data);
             }
@@ -126,11 +128,10 @@ ZEND_API static void photon_execute_internal(zend_execute_data *execute_data, zv
     photon_execute_base(1, execute_data, return_value);
 }
 
-// TODO: All interceptors should have same signature
+// TODO: This is just an example interceptor
 void curl_exec_interceptor_callback(zend_execute_data *execute_data)
 {
-    puts("Stuff?..");
-    printf("%d\n", ZEND_CALL_NUM_ARGS(execute_data));
+    puts("curl_exec called");
 }
 
 PHP_MINIT_FUNCTION(photon)
@@ -156,7 +157,33 @@ PHP_MINIT_FUNCTION(photon)
     zend_hash_init(PHOTON_INTERCEPTORS, 128, NULL, photon_interceptor_dtor, 1);
 
     // TODO: Define actual interceptors
-    photon_interceptor_add("curl_exec", &curl_exec_interceptor_callback);
+    if (extension_loaded("curl")) {
+        photon_interceptor_add("curl_exec", &curl_exec_interceptor_callback);
+    }
+
+    if (extension_loaded("PDO")) {
+
+    }
+
+    if (extension_loaded("mysqli")) {
+
+    }
+
+    if (extension_loaded("pgsql")) {
+
+    }
+
+    if (extension_loaded("redis")) {
+
+    }
+
+    if (extension_loaded("memcache")) {
+
+    }
+
+    if (extension_loaded("memcached")) {
+
+    }
 
     // Overload VM execution functions
     original_zend_execute_internal = zend_execute_internal;
