@@ -72,13 +72,14 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
     const char *class_name = (zf->common.scope != NULL && zf->common.scope->name != NULL) ? ZSTR_VAL(zf->common.scope->name) : NULL;
     const char *function_name = zf->common.function_name == NULL ? NULL : ZSTR_VAL(zf->common.function_name);
 
+    // Build interceptor key
     // Use `smart_string`: it has `char *` as internal storage, while `smart_str` uses `zend_string`
     smart_string itc_name = {0};
 
     if (NULL != class_name) {
         // +1 is for separator between class & method name
         smart_string_appends(&itc_name, class_name);
-        smart_string_appendc(&itc_name, '#');
+        smart_string_appendc(&itc_name, PHOTON_ITC_SEPARATOR);
     }
 
     if (NULL != function_name) {
@@ -109,8 +110,7 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
 
     // TODO: ...
 
-    efree(class_name);
-    efree(function_name);
+    // Do not free function & class name - they are owned by execute_data
     smart_string_free(&itc_name);
 }
 
@@ -130,6 +130,7 @@ ZEND_API static void photon_execute_internal(zend_execute_data *execute_data, zv
 void curl_exec_interceptor_callback(zend_execute_data *execute_data)
 {
     puts("Stuff?..");
+    printf("%d\n", ZEND_CALL_NUM_ARGS(execute_data));
 }
 
 PHP_MINIT_FUNCTION(photon)

@@ -81,6 +81,8 @@ ZEND_EXTERN_MODULE_GLOBALS(photon)
 #define PHOTON_TXN_STACK    PHOTON_G(transaction_stack)
 #define PHOTON_INTERCEPTORS PHOTON_G(interceptor_table)
 
+#define PHOTON_ITC_SEPARATOR '#'
+
 ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value);
 ZEND_API static void photon_execute_internal(zend_execute_data *execute_data, zval *return_value);
 ZEND_API static void photon_execute_ex (zend_execute_data *execute_data);
