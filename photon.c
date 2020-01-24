@@ -34,10 +34,30 @@
 
 ZEND_DECLARE_MODULE_GLOBALS(photon)
 
+static PHP_INI_MH(OnUpdateProfilingSampleFreq)
+{
+    double percent;
+
+    percent = atof(ZSTR_VAL(new_value));
+    percent = percent < 0.0 ? 0.0 : percent;
+    percent = percent > 100.0 ? 100.0 : percent;
+
+    PHOTON_G(profiling_sample_freq) = percent;
+
+    return SUCCESS;
+}
+
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("photon.enable",               "1",                   PHP_INI_SYSTEM, OnUpdateBool,   enable,               zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.enable",                "1",                   PHP_INI_SYSTEM, OnUpdateBool, enable, zend_photon_globals, photon_globals)
+
     // TODO: Change default path to `/var/log/photon-php/transactions.log` or something like that
-    STD_PHP_INI_ENTRY("photon.transaction_log_path", "/tmp/photon-txn.log", PHP_INI_SYSTEM, OnUpdateString, transaction_log_path, zend_photon_globals, photon_globals)
+    // TODO: Custom updater?
+    STD_PHP_INI_ENTRY("photon.transaction_log_path",  "/tmp/photon-txn.log", PHP_INI_SYSTEM, OnUpdateString, transaction_log_path, zend_photon_globals, photon_globals)
+
+    STD_PHP_INI_ENTRY("photon.profiling_enable",      "1",                   PHP_INI_SYSTEM, OnUpdateBool, profiling_enable,     zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiling_enable_cli",  "1",                   PHP_INI_SYSTEM, OnUpdateBool, profiling_enable_cli, zend_photon_globals, photon_globals)
+
+    STD_PHP_INI_ENTRY("photon.profiling_sample_freq", "5%",                  PHP_INI_SYSTEM, OnUpdateProfilingSampleFreq, profiling_sample_freq, zend_photon_globals, photon_globals)
 PHP_INI_END()
 
 // Returns clock as u64 instead of structure
@@ -66,7 +86,8 @@ static void (*original_zend_execute_internal)(zend_execute_data *execute_data, z
 // Execution interceptor
 ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value)
 {
-    // TODO: Check if function needs to be intercepted
+    // TODO: See if we should do something about closures and generators
+    // TODO: Also, check if traits renaming makes sense
     zend_function *zf = execute_data->func;
 
     const char *class_name = (zf->common.scope != NULL && zf->common.scope->name != NULL) ? ZSTR_VAL(zf->common.scope->name) : NULL;
@@ -276,7 +297,7 @@ static void photon_interceptor_add(char *name, interceptor_handler fn)
 
 static void photon_interceptor_dtor(zval *entry)
 {
-    // TODO: Do we need to make sure it's not NULL?
+    // HashTable calls destructor for defined interceptors, so this can't be null
     interceptor *itc = *(interceptor **)entry;
     pefree(itc->name, 1);
     pefree(itc, 1);
@@ -316,6 +337,8 @@ static void photon_txn_start(char *endpoint_name)
     next->timer_monotonic = clock_gettime_as_ns(CLOCK_MONOTONIC);
     next->timer_cpu = clock_gettime_as_ns(CLOCK_THREAD_CPUTIME_ID);
 
+    // TODO: Decide on profiling: copy parent's value or do random number according to rate
+
     // TODO: If prev exists, copy properties. Otherwise this is a root transaction, resolve from environment
     if (NULL != endpoint_name) {
         next->endpoint_name = estrdup(endpoint_name);
@@ -351,8 +374,8 @@ static void photon_txn_end()
     // Build report line
     // See http://www.phpinternalsbook.com/php7/internal_types/strings/printing_functions.html
     char *data;
-    // TODO: This call allocates `smart_str` that is lost
-    // TODO: Need to escape double quotes
+    // TODO: This call allocates `smart_str` for the pattern, and it is lost, but cleaned up thanks to ZendMM
+    // TODO: Need to quote strings and escape double quotes
     int length = spprintf(
         &data, 0,
         "%s,%s,%s,%s,%s,%"PRIu64",%"PRIu64",%zu,%zu,%"PRIu64"\n",

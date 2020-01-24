@@ -54,13 +54,16 @@ typedef struct _interceptor {
 } interceptor;
 
 ZEND_BEGIN_MODULE_GLOBALS(photon)
-    // Per module, auto-allocation
+    // Configuration: per module, auto-allocation
     zend_bool enable;
     char *transaction_log_path;
+    zend_bool profiling_enable;
+    zend_bool profiling_enable_cli;
+    double profiling_sample_freq;
 
     // Per module, using `pemalloc`
-    FILE       *transaction_log;
-    HashTable  *interceptor_table;
+    FILE      *transaction_log;
+    HashTable *interceptor_table;
 
     // Per request, using `emalloc`
     zend_ptr_stack *transaction_stack;
