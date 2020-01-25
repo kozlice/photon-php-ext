@@ -371,6 +371,9 @@ static void photon_txn_end()
 {
     transaction *txn = zend_ptr_stack_pop(PHOTON_TXN_STACK);
 
+    // TODO: If this is root transaction, we can add `SG(sapi_headers).http_response_code)` to report (non-CLI)
+    // TODO: Also, there is `EG(exit_status)`. When exception is thrown, it's 255 (under any SAPI), and `exit(N)` works
+
     // Build report line
     // See http://www.phpinternalsbook.com/php7/internal_types/strings/printing_functions.html
     char *data;
