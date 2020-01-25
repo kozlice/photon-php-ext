@@ -61,6 +61,9 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     zend_bool profiling_enable;
     zend_bool profiling_enable_cli;
     double profiling_sample_freq;
+    char *app_name;
+    char *app_version;
+    char *app_env;
 
     // Per module, using `pemalloc`
     FILE      *transaction_log;

@@ -50,6 +50,10 @@ static PHP_INI_MH(OnUpdateProfilingSampleFreq)
 PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("photon.enable",                "1",                   PHP_INI_SYSTEM, OnUpdateBool, enable, zend_photon_globals, photon_globals)
 
+    STD_PHP_INI_ENTRY("photon.app_name",              "app",                 PHP_INI_SYSTEM, OnUpdateStringUnempty, app_name,    zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.app_version",           "0.1.0",               PHP_INI_SYSTEM, OnUpdateStringUnempty, app_version, zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.app_env",               "dev",                 PHP_INI_SYSTEM, OnUpdateStringUnempty, app_env,     zend_photon_globals, photon_globals)
+
     // TODO: Change default path to `/var/log/photon-php/transactions.log` or something like that
     // TODO: Custom updater?
     STD_PHP_INI_ENTRY("photon.transaction_log_path",  "/tmp/photon-txn.log", PHP_INI_SYSTEM, OnUpdateString, transaction_log_path, zend_photon_globals, photon_globals)
@@ -351,10 +355,9 @@ static void photon_txn_start(char *endpoint_name)
         next->app_version = estrdup(prev->app_version);
         next->app_env = estrdup(prev->app_env);
     } else {
-        // TODO: Defaults via .ini?
-        next->app_name = estrdup("app");
-        next->app_version = estrdup("0.0.1");
-        next->app_env = estrdup("dev");
+        next->app_name = estrdup(PHOTON_G(app_name));
+        next->app_version = estrdup(PHOTON_G(app_version));
+        next->app_env = estrdup(PHOTON_G(app_env));
     }
 
     // Push pointer to the transaction onto stack
