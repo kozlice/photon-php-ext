@@ -37,7 +37,7 @@ make install
 
 ## Configuration
 
-All values in these example are the default values.
+All values in this example are the defaults.
 
 ```ini
 ; Overall extension switch.
