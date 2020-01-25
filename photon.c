@@ -414,13 +414,13 @@ zend_module_entry photon_module_entry = {
     STANDARD_MODULE_HEADER,
     PHP_PHOTON_NAME,                  /* Extension name */
     photon_functions,                 /* List of functions */
-    PHP_MINIT(photon),                /* PHP_MINIT - Module initialization */
-    PHP_MSHUTDOWN(photon),            /* PHP_MSHUTDOWN - Module shutdown */
-    PHP_RINIT(photon),                /* PHP_RINIT - Request initialization */
-    PHP_RSHUTDOWN(photon),            /* PHP_RSHUTDOWN - Request shutdown */
-    PHP_MINFO(photon),                /* PHP_MINFO - Module info */
+    PHP_MINIT(photon),                /* PHP_MINIT - module initialization */
+    PHP_MSHUTDOWN(photon),            /* PHP_MSHUTDOWN - module shutdown */
+    PHP_RINIT(photon),                /* PHP_RINIT - request initialization */
+    PHP_RSHUTDOWN(photon),            /* PHP_RSHUTDOWN - request shutdown */
+    PHP_MINFO(photon),                /* PHP_MINFO - module info */
     PHP_PHOTON_VERSION,               /* Extension version */
-    PHP_MODULE_GLOBALS(photon),       /* */
+    PHP_MODULE_GLOBALS(photon),       /* Got globals */
     NULL,                             /* No PHP_GINIT */
     NULL,                             /* No PHP_GSHUTDOWN */
     NULL,                             /* No post-deactivate function */
