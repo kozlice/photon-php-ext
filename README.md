@@ -43,31 +43,20 @@ All values in these example are the default values.
 ; Overall extension switch.
 photon.enable = 1;
 
+; Default application info. Can be modified at runtime using
+; functions provided by the extension.
+photon.app_name = "app";
+photon.app_version = "0.1.0";
+photon.app_env = "dev";
+
 ; Path to transaction log.
 photon.transaction_log_path = "/var/log/photon-php/transaction.log";
 
 ; Whether to enable or not profiling in web and CLI.
-photon.profiling_web = 1;
-photon.profiling_cli = 1;
+photon.profiling_enable = 1;
+photon.profiling_enable_cli = 1;
 
-; TODO: Profiling modes & options description
-photon.profiling_mode = "always" | "sampling" | "off";
-
-photon.profiling_sampling_rate = 5;
-
-; Enables HTTP tracing: outgoing requests will have an
-; additional HTTP header, and incoming request with such
-; header will change current request's trace ID.
-photon.tracing_http = 1;
-
-; HTTP header name for the setting above.
-photon.tracing_http_header_name = "X-Photon-Trace-Id";
-
-; Enables AMQP tracing: outgoing messages will have an
-; additional header, and incoming messages will change
-; current request's trace ID.
-photon.tracing_amqp = 1;
-
-; AMQP header name for the setting above.
-photon.tracing_amqp_header_name = "x_photon_trace_id";
+; What fraction of requests should be profiled. Can be a float,
+; e.g. `5.8%`.
+photon.profiling_sample_freq = 5%;
 ```
