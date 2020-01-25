@@ -40,6 +40,7 @@ typedef struct _transaction {
     char     id[37];
     char    *app_name;
     char    *app_version;
+    char    *app_env;
     char    *endpoint_name;
     uint64_t timestamp;
     uint64_t timer_monotonic;

@@ -349,10 +349,12 @@ static void photon_txn_start(char *endpoint_name)
     if (NULL != prev) {
         next->app_name = estrdup(prev->app_name);
         next->app_version = estrdup(prev->app_version);
+        next->app_env = estrdup(prev->app_env);
     } else {
-        // TODO: Defaults?
+        // TODO: Defaults via .ini?
         next->app_name = estrdup("app");
         next->app_version = estrdup("0.0.1");
+        next->app_env = estrdup("dev");
     }
 
     // Push pointer to the transaction onto stack
@@ -364,6 +366,7 @@ static void photon_txn_dtor(transaction *txn)
     efree(txn->id);
     efree(txn->app_name);
     efree(txn->app_version);
+    efree(txn->app_env);
     efree(txn->endpoint_name);
 }
 
@@ -381,9 +384,10 @@ static void photon_txn_end()
     // TODO: Need to quote strings and escape double quotes
     int length = spprintf(
         &data, 0,
-        "%s,%s,%s,%s,%s,%"PRIu64",%"PRIu64",%zu,%zu,%"PRIu64"\n",
+        "%s,%s,%s,%s,%s,%s,%"PRIu64",%"PRIu64",%zu,%zu,%"PRIu64"\n",
         txn->app_name,
         txn->app_version,
+        txn->app_env,
         sapi_module.name,
         txn->endpoint_name,
         txn->id,
