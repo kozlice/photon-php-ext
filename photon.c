@@ -90,8 +90,11 @@ static void (*original_zend_execute_internal)(zend_execute_data *execute_data, z
 // Execution interceptor
 ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value)
 {
-    // TODO: See if we should do something about closures and generators
-    // TODO: Also, check if traits renaming makes sense
+    // TODO: Use stack depth for current transaction
+    transaction *txn = photon_get_current_txn();
+    txn->stack_depth++;
+
+    // TODO: See how methods are named: class name when extending, renamed methods from traits, etc.
     zend_function *zf = execute_data->func;
 
     const char *class_name = (zf->common.scope != NULL && zf->common.scope->name != NULL) ? ZSTR_VAL(zf->common.scope->name) : NULL;
@@ -104,7 +107,7 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
     if (NULL != class_name) {
         // +1 is for separator between class & method name
         smart_string_appends(&itc_name, class_name);
-        smart_string_appendc(&itc_name, PHOTON_ITC_SEPARATOR);
+        smart_string_appends(&itc_name, PHOTON_ITC_SEPARATOR);
     }
 
     if (NULL != function_name) {
@@ -125,6 +128,24 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
         }
     }
 
+    profiling_span *span;
+    uint64_t span_timer_monotonic;
+    uint64_t span_timer_cpu;
+
+    if (txn->profiling_enable) {
+        span = emalloc(sizeof(profiling_span));
+
+        // TODO: What should be used as name? `{main}` is an option, but still
+        span->name = estrdup(itc_name.len ? itc_name.c : "{main}");
+        span->stack_depth = txn->stack_depth;
+
+        span_timer_monotonic = clock_gettime_as_ns(CLOCK_MONOTONIC_RAW);
+        span_timer_cpu = clock_gettime_as_ns(CLOCK_THREAD_CPUTIME_ID);
+
+        // Watch out: double pointers
+        zend_llist_add_element(txn->profiling_spans, &span);
+    }
+
     if (internal) {
         if (original_zend_execute_internal) {
             original_zend_execute_internal(execute_data, return_value);
@@ -135,10 +156,17 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
         original_zend_execute_ex(execute_data);
     }
 
+    if (txn->profiling_enable) {
+        span->duration_monotonic = clock_gettime_as_ns(CLOCK_MONOTONIC_RAW) - span_timer_monotonic;
+        span->duration_cpu = clock_gettime_as_ns(CLOCK_THREAD_CPUTIME_ID) - span_timer_cpu;
+    }
+
     // TODO: ...
 
     // Do not free function & class name - they are owned by execute_data
     smart_string_free(&itc_name);
+
+    txn->stack_depth--;
 }
 
 // Wrapper for userland function calls
@@ -338,7 +366,7 @@ static void photon_txn_start(char *endpoint_name)
 
     // Measure time
     next->timestamp = clock_gettime_as_ns(CLOCK_REALTIME);
-    next->timer_monotonic = clock_gettime_as_ns(CLOCK_MONOTONIC);
+    next->timer_monotonic = clock_gettime_as_ns(CLOCK_MONOTONIC_RAW);
     next->timer_cpu = clock_gettime_as_ns(CLOCK_THREAD_CPUTIME_ID);
 
     // TODO: Decide on profiling: copy parent's value or do random number according to rate
@@ -351,13 +379,25 @@ static void photon_txn_start(char *endpoint_name)
     }
 
     if (NULL != prev) {
+        // TODO: This is a matter of discussion, maybe should be 0 anyway
+        next->stack_depth = prev->stack_depth;
+        next->profiling_enable = prev->profiling_enable;
         next->app_name = estrdup(prev->app_name);
         next->app_version = estrdup(prev->app_version);
         next->app_env = estrdup(prev->app_env);
     } else {
+        next->stack_depth = 0;
+        // TODO: Should be calculated from frequency
+        next->profiling_enable = 1;
         next->app_name = estrdup(PHOTON_G(app_name));
         next->app_version = estrdup(PHOTON_G(app_version));
         next->app_env = estrdup(PHOTON_G(app_env));
+    }
+
+    if (next->profiling_enable) {
+        next->profiling_spans = emalloc(sizeof(zend_llist));
+        // TODO: Destructor for spans
+        zend_llist_init(next->profiling_spans, sizeof(profiling_span *), NULL, 0);
     }
 
     // Push pointer to the transaction onto stack
@@ -380,13 +420,10 @@ static void photon_txn_end()
     // TODO: If this is root transaction, we can add `SG(sapi_headers).http_response_code)` to report (non-CLI)
     // TODO: Also, there is `EG(exit_status)`. When exception is thrown, it's 255 (under any SAPI), and `exit(N)` works
 
-    // Build report line
-    // See http://www.phpinternalsbook.com/php7/internal_types/strings/printing_functions.html
-    char *data;
-    // TODO: This call allocates `smart_str` for the pattern, and it is lost, but cleaned up thanks to ZendMM
     // TODO: Need to quote strings and escape double quotes
-    int length = spprintf(
-        &data, 0,
+    // Write transaction info into log file
+    fprintf(
+        PHOTON_TXN_LOG,
         "%s,%s,%s,%s,%s,%s,%"PRIu64",%"PRIu64",%zu,%zu,%"PRIu64"\n",
         txn->app_name,
         txn->app_version,
@@ -394,15 +431,33 @@ static void photon_txn_end()
         sapi_module.name,
         txn->endpoint_name,
         txn->id,
-        clock_gettime_as_ns(CLOCK_MONOTONIC) - txn->timer_monotonic,
+        clock_gettime_as_ns(CLOCK_MONOTONIC_RAW) - txn->timer_monotonic,
         clock_gettime_as_ns(CLOCK_THREAD_CPUTIME_ID) - txn->timer_cpu,
         zend_memory_usage(0),
         zend_memory_usage(1),
         txn->timestamp
     );
 
-    // Write into log file
-    fwrite(data, 1, length, PHOTON_TXN_LOG);
+    if (txn->profiling_enable) {
+        // TODO: Create file using path from config
+        // TODO: Use `zend_llist_apply_with_del`
+        zend_llist_element *element, *next;
+        element = txn->profiling_spans->head;
+        while (element) {
+            next = element->next;
+            // Watch out: double pointers
+            profiling_span *span = *(profiling_span **)element->data;
+            printf("%d,%s,%"PRIu64",%"PRIu64"\n", span->stack_depth, span->name, span->duration_monotonic, span->duration_cpu);
+            efree(span->name);
+            efree(span);
+            element = next;
+            // TODO: Write every line into file
+        }
+        // TODO: Flush & close file
+        // TODO: Destructor for spans
+        zend_llist_destroy(txn->profiling_spans);
+        efree(txn->profiling_spans);
+    }
 
     photon_txn_dtor(txn);
     efree(txn);

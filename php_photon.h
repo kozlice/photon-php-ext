@@ -35,6 +35,13 @@ extern zend_module_entry photon_module_entry;
 ZEND_TSRMLS_CACHE_EXTERN()
 #endif
 
+typedef struct _profiling_span {
+    char    *name;
+    int      stack_depth;
+    uint64_t duration_monotonic;
+    uint64_t duration_cpu;
+} profiling_span;
+
 typedef struct _transaction {
     // See https://stackoverflow.com/questions/51053568/generating-a-random-uuid-in-c
     char     id[37];
@@ -42,9 +49,13 @@ typedef struct _transaction {
     char    *app_version;
     char    *app_env;
     char    *endpoint_name;
+    int      stack_depth;
     uint64_t timestamp;
     uint64_t timer_monotonic;
     uint64_t timer_cpu;
+
+    zend_bool   profiling_enable;
+    zend_llist *profiling_spans;
 } transaction;
 
 typedef void (*interceptor_handler)(zend_execute_data *);
@@ -88,7 +99,7 @@ ZEND_EXTERN_MODULE_GLOBALS(photon)
 #define PHOTON_TXN_STACK    PHOTON_G(transaction_stack)
 #define PHOTON_INTERCEPTORS PHOTON_G(interceptor_table)
 
-#define PHOTON_ITC_SEPARATOR '#'
+#define PHOTON_ITC_SEPARATOR "::"
 
 ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value);
 ZEND_API static void photon_execute_internal(zend_execute_data *execute_data, zval *return_value);
