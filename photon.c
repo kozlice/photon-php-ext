@@ -387,7 +387,7 @@ static void photon_txn_start(char *endpoint_name)
         next->app_env = estrdup(prev->app_env);
     } else {
         next->stack_depth = 0;
-        // TODO: Should be calculated from frequency
+        // TODO: Should be calculated from frequency + check config settings (web & CLI)
         next->profiling_enable = 1;
         next->app_name = estrdup(PHOTON_G(app_name));
         next->app_version = estrdup(PHOTON_G(app_version));
@@ -440,6 +440,13 @@ static void photon_txn_end()
 
     if (txn->profiling_enable) {
         // TODO: Create file using path from config
+        // ID already is zero-terminated, so don't add +1 to length
+        char *filename = emalloc(sizeof("/tmp/profile-") + sizeof(txn->id));
+        strcpy(filename, "/tmp/profile-");
+        strcat(filename, (const char *)&txn->id);
+        // TODO: If opening failed, bailout
+        FILE *fp = fopen(filename, "a");
+
         // TODO: Use `zend_llist_apply_with_del`
         zend_llist_element *element, *next;
         element = txn->profiling_spans->head;
@@ -447,13 +454,27 @@ static void photon_txn_end()
             next = element->next;
             // Watch out: double pointers
             profiling_span *span = *(profiling_span **)element->data;
-            printf("%d,%s,%"PRIu64",%"PRIu64"\n", span->stack_depth, span->name, span->duration_monotonic, span->duration_cpu);
+
+            fprintf(
+                fp,
+                "%d,%s,%"PRIu64",%"PRIu64"\n",
+                span->stack_depth,
+                span->name,
+                span->duration_monotonic,
+                span->duration_cpu
+            );
+
             efree(span->name);
             efree(span);
             element = next;
-            // TODO: Write every line into file
         }
-        // TODO: Flush & close file
+
+        // Flush & close file
+        fflush(fp);
+        fclose(fp);
+        efree(filename);
+
+        // Destroy spans list
         // TODO: Destructor for spans
         zend_llist_destroy(txn->profiling_spans);
         efree(txn->profiling_spans);
