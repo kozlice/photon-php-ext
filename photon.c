@@ -353,6 +353,20 @@ static zend_always_inline transaction *photon_get_current_txn()
     return NULL;
 }
 
+static zend_bool photon_should_profile()
+{
+    if (0 == strcmp(sapi_module.name, "cli") && 0 == PHOTON_G(profiling_enable_cli)) {
+        return 0;
+    }
+
+    if (0 == PHOTON_G(profiling_enable)) {
+        return 0;
+    }
+
+    // TODO: Calculate from frequency
+    return 1;
+}
+
 static void photon_txn_start(char *endpoint_name)
 {
     transaction *next = emalloc(sizeof(transaction));
@@ -388,7 +402,7 @@ static void photon_txn_start(char *endpoint_name)
     } else {
         next->stack_depth = 0;
         // TODO: Should be calculated from frequency + check config settings (web & CLI)
-        next->profiling_enable = 1;
+        next->profiling_enable = photon_should_profile();
         next->app_name = estrdup(PHOTON_G(app_name));
         next->app_version = estrdup(PHOTON_G(app_version));
         next->app_env = estrdup(PHOTON_G(app_env));

@@ -108,6 +108,7 @@ ZEND_API static void photon_execute_ex (zend_execute_data *execute_data);
 static zend_always_inline uint64_t clock_gettime_as_ns(clockid_t clk_id);
 static zend_always_inline int extension_loaded(char *extension_name);
 
+static zend_bool photon_should_profile();
 static void photon_txn_start(char *endpoint_name);
 static void photon_txn_end();
 static void photon_txn_dtor(transaction *txn);
