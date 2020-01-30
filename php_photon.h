@@ -69,6 +69,7 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     // Configuration: per module, auto-allocation
     zend_bool enable;
     char *transaction_log_path;
+    char *profiling_report_dir;
     zend_bool profiling_enable;
     zend_bool profiling_enable_cli;
     double profiling_sample_freq;

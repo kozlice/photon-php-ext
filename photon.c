@@ -20,6 +20,7 @@
 
 #include "php.h"
 #include "ext/standard/info.h"
+#include "ext/standard/php_random.h"
 #include "Zend/zend_ptr_stack.h"
 #include "Zend/zend_smart_string.h"
 #include "SAPI.h"
@@ -34,6 +35,7 @@
 
 ZEND_DECLARE_MODULE_GLOBALS(photon)
 
+// TODO: Only support up to .01%
 static PHP_INI_MH(OnUpdateProfilingSampleFreq)
 {
     double percent;
@@ -48,20 +50,20 @@ static PHP_INI_MH(OnUpdateProfilingSampleFreq)
 }
 
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("photon.enable",                "1",                   PHP_INI_SYSTEM, OnUpdateBool, enable, zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.enable",      "1",     PHP_INI_SYSTEM, OnUpdateBool, enable, zend_photon_globals, photon_globals)
 
-    STD_PHP_INI_ENTRY("photon.app_name",              "app",                 PHP_INI_SYSTEM, OnUpdateStringUnempty, app_name,    zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.app_version",           "0.1.0",               PHP_INI_SYSTEM, OnUpdateStringUnempty, app_version, zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.app_env",               "dev",                 PHP_INI_SYSTEM, OnUpdateStringUnempty, app_env,     zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.app_name",    "app",   PHP_INI_SYSTEM, OnUpdateStringUnempty, app_name,    zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.app_version", "0.1.0", PHP_INI_SYSTEM, OnUpdateStringUnempty, app_version, zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.app_env",     "dev",   PHP_INI_SYSTEM, OnUpdateStringUnempty, app_env,     zend_photon_globals, photon_globals)
 
-    // TODO: Change default path to `/var/log/photon-php/transactions.log` or something like that
-    // TODO: Custom updater?
-    STD_PHP_INI_ENTRY("photon.transaction_log_path",  "/tmp/photon-txn.log", PHP_INI_SYSTEM, OnUpdateString, transaction_log_path, zend_photon_globals, photon_globals)
+    // TODO: Change default path to `/var/log/photon-php/transactions.log` and `/var/log/photon-php/profiler/`
+    STD_PHP_INI_ENTRY("photon.transaction_log_path", "/tmp/photon/transactions.log", PHP_INI_SYSTEM, OnUpdateStringUnempty, transaction_log_path, zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiling_report_dir", "/tmp/photon/profiler/",        PHP_INI_SYSTEM, OnUpdateStringUnempty, profiling_report_dir, zend_photon_globals, photon_globals)
 
-    STD_PHP_INI_ENTRY("photon.profiling_enable",      "1",                   PHP_INI_SYSTEM, OnUpdateBool, profiling_enable,     zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.profiling_enable_cli",  "1",                   PHP_INI_SYSTEM, OnUpdateBool, profiling_enable_cli, zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiling_enable",      "1",  PHP_INI_SYSTEM, OnUpdateBool, profiling_enable,     zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiling_enable_cli",  "1",  PHP_INI_SYSTEM, OnUpdateBool, profiling_enable_cli, zend_photon_globals, photon_globals)
 
-    STD_PHP_INI_ENTRY("photon.profiling_sample_freq", "5%",                  PHP_INI_SYSTEM, OnUpdateProfilingSampleFreq, profiling_sample_freq, zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiling_sample_freq", "5%", PHP_INI_SYSTEM, OnUpdateProfilingSampleFreq, profiling_sample_freq, zend_photon_globals, photon_globals)
 PHP_INI_END()
 
 // Returns clock as u64 instead of structure
@@ -199,6 +201,12 @@ PHP_MINIT_FUNCTION(photon)
     // Open transaction log
     // TODO: If log opening failed, log error, disable extension & return early
     PHOTON_TXN_LOG = fopen(PHOTON_G(transaction_log_path), "a");
+
+    // TODO: If profiling is enabled, ensure directory
+    // TODO: In case of error, disable extension & return early
+    if (1 == PHOTON_G(profiling_enable) || 1 == PHOTON_G(profiling_enable_cli)) {
+
+    }
 
     // Userland constants
     REGISTER_STRING_CONSTANT("PHOTON_TXN_PROPERTY_APP_NAME", "app_name", CONST_CS | CONST_PERSISTENT);
@@ -363,8 +371,10 @@ static zend_bool photon_should_profile()
         return 0;
     }
 
-    // TODO: Calculate from frequency
-    return 1;
+    zend_long dice;
+    // TODO: This function can throw, need to handle that
+    php_random_int(0, 10000, &dice, 0);
+    return (((double)dice) / 100) < PHOTON_G(profiling_sample_freq);
 }
 
 static void photon_txn_start(char *endpoint_name)
