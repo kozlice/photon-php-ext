@@ -55,9 +55,12 @@ PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("photon.app_version", "0.1.0", PHP_INI_SYSTEM, OnUpdateStringUnempty, app_version, zend_photon_globals, photon_globals)
     STD_PHP_INI_ENTRY("photon.app_env",     "dev",   PHP_INI_SYSTEM, OnUpdateStringUnempty, app_env,     zend_photon_globals, photon_globals)
 
-    STD_PHP_INI_ENTRY("photon.profiler_enable",        "1",  PHP_INI_SYSTEM, OnUpdateBool,                 profiler_enable,      zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.profiler_enable_cli",    "1",  PHP_INI_SYSTEM, OnUpdateBool,                 profiler_enable_cli,  zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.profiler_sampling_freq", "5%", PHP_INI_SYSTEM, OnUpdateProfilerSamplingFreq, profiler_sampling_freq, zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiler_enable",              "1",  PHP_INI_SYSTEM, OnUpdateBool,                 profiler_enable,              zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiler_enable_cli",          "1",  PHP_INI_SYSTEM, OnUpdateBool,                 profiler_enable_cli,          zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiler_sampling_freq",       "5%", PHP_INI_SYSTEM, OnUpdateProfilerSamplingFreq, profiler_sampling_freq,       zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiler_trigger_http_header", "",   PHP_INI_SYSTEM, OnUpdateString,               profiler_trigger_http_header, zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiler_trigger_query_param", "",   PHP_INI_SYSTEM, OnUpdateString,               profiler_trigger_query_param, zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiler_trigger_cookie_name", "",   PHP_INI_SYSTEM, OnUpdateString,               profiler_trigger_cookie_name, zend_photon_globals, photon_globals)
 
     // TODO: Custom handlers?
     // TODO: Change default path to `/var/log/photon-php/transactions.log` and `/var/log/photon-php/profiler/`
@@ -375,7 +378,23 @@ static zend_bool photon_should_profile()
         return 0;
     }
 
-    // TODO: Extras: if header, or cookie, or query param was provided to trigger profiling
+    // TODO: Refactor this. Looks terrible
+    zval *value = NULL;
+    if (
+        0 < strlen(PHOTON_G(profiler_trigger_http_header))
+        && (
+            Z_TYPE(PG(http_globals)[TRACK_VARS_SERVER]) == IS_ARRAY
+            || zend_is_auto_global_str(ZEND_STRL("_SERVER"))
+        )
+        && (NULL != (value = zend_hash_str_find(Z_ARRVAL(PG(http_globals)[TRACK_VARS_SERVER]), "HTTP_X_PHOTON_ENABLE_PROFILING", strlen("HTTP_X_PHOTON_ENABLE_PROFILING"))))
+        && IS_STRING == Z_TYPE_P(value)
+        && 0 != Z_STRLEN_P(value)
+    ) {
+        // TODO: If value is truthy, return true (or simply present at all)
+    }
+
+    // TODO: Same for query param
+    // TODO: Same for cookies
 
     zend_long dice;
     // TODO: This function can throw, need to handle that

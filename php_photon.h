@@ -75,6 +75,9 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     zend_bool profiler_enable;
     zend_bool profiler_enable_cli;
     double profiler_sampling_freq;
+    char *profiler_trigger_http_header;
+    char *profiler_trigger_query_param;
+    char *profiler_trigger_cookie_name;
     char *app_name;
     char *app_version;
     char *app_env;
