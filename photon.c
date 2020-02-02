@@ -36,7 +36,7 @@
 ZEND_DECLARE_MODULE_GLOBALS(photon)
 
 // TODO: Only support up to .01%?
-static PHP_INI_MH(OnUpdateProfilingSampleFreq)
+static PHP_INI_MH(OnUpdateProfilerSamplingFreq)
 {
     double percent;
 
@@ -44,7 +44,7 @@ static PHP_INI_MH(OnUpdateProfilingSampleFreq)
     percent = percent < 0.0 ? 0.0 : percent;
     percent = percent > 100.0 ? 100.0 : percent;
 
-    PHOTON_G(profiling_sample_freq) = percent;
+    PHOTON_G(profiler_sampling_freq) = percent;
     return SUCCESS;
 }
 
@@ -55,14 +55,14 @@ PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("photon.app_version", "0.1.0", PHP_INI_SYSTEM, OnUpdateStringUnempty, app_version, zend_photon_globals, photon_globals)
     STD_PHP_INI_ENTRY("photon.app_env",     "dev",   PHP_INI_SYSTEM, OnUpdateStringUnempty, app_env,     zend_photon_globals, photon_globals)
 
-    STD_PHP_INI_ENTRY("photon.profiling_enable",      "1",  PHP_INI_SYSTEM, OnUpdateBool,                profiling_enable,      zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.profiling_enable_cli",  "1",  PHP_INI_SYSTEM, OnUpdateBool,                profiling_enable_cli,  zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.profiling_sample_freq", "5%", PHP_INI_SYSTEM, OnUpdateProfilingSampleFreq, profiling_sample_freq, zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiler_enable",        "1",  PHP_INI_SYSTEM, OnUpdateBool,                 profiler_enable,      zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiler_enable_cli",    "1",  PHP_INI_SYSTEM, OnUpdateBool,                 profiler_enable_cli,  zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiler_sampling_freq", "5%", PHP_INI_SYSTEM, OnUpdateProfilerSamplingFreq, profiler_sampling_freq, zend_photon_globals, photon_globals)
 
     // TODO: Custom handlers?
     // TODO: Change default path to `/var/log/photon-php/transactions.log` and `/var/log/photon-php/profiler/`
     STD_PHP_INI_ENTRY("photon.transaction_log_path", "/tmp/photon/transactions.log", PHP_INI_SYSTEM, OnUpdateStringUnempty, transaction_log_path, zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.profiling_report_dir", "/tmp/photon/profiler/",        PHP_INI_SYSTEM, OnUpdateStringUnempty, profiling_report_dir, zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiler_output_dir",  "/tmp/photon/profiler/",        PHP_INI_SYSTEM, OnUpdateStringUnempty, profiler_output_dir, zend_photon_globals, photon_globals)
 PHP_INI_END()
 
 // Returns clock as u64 instead of structure
@@ -131,12 +131,12 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
         }
     }
 
-    profiling_span *span;
+    profiler_span *span;
     uint64_t span_timer_monotonic;
     uint64_t span_timer_cpu;
 
-    if (txn->profiling_enable) {
-        span = emalloc(sizeof(profiling_span));
+    if (txn->profiler_enable) {
+        span = emalloc(sizeof(profiler_span));
 
         // TODO: What should be used as name? `{main}` is an option, but still
         span->name = estrdup(itc_name.len ? itc_name.c : "{main}");
@@ -146,7 +146,7 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
         span_timer_cpu = clock_gettime_as_ns(CLOCK_THREAD_CPUTIME_ID);
 
         // Watch out: double pointers
-        zend_llist_add_element(txn->profiling_spans, &span);
+        zend_llist_add_element(txn->profiler_spans, &span);
     }
 
     if (internal) {
@@ -159,7 +159,7 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
         original_zend_execute_ex(execute_data);
     }
 
-    if (txn->profiling_enable) {
+    if (txn->profiler_enable) {
         span->duration_monotonic = clock_gettime_as_ns(CLOCK_MONOTONIC_RAW) - span_timer_monotonic;
         span->duration_cpu = clock_gettime_as_ns(CLOCK_THREAD_CPUTIME_ID) - span_timer_cpu;
     }
@@ -209,8 +209,8 @@ PHP_MINIT_FUNCTION(photon)
 
     // If profiling is enabled, ensure directory
     // TODO: Disable extension or trigger failure?
-    if (1 == PHOTON_G(profiling_enable) || 1 == PHOTON_G(profiling_enable_cli)) {
-        if (0 != access(PHOTON_G(profiling_report_dir), W_OK)) {
+    if (1 == PHOTON_G(profiler_enable) || 1 == PHOTON_G(profiler_enable_cli)) {
+        if (0 != access(PHOTON_G(profiler_output_dir), W_OK)) {
             PHOTON_ERROR("[PHOTON] Unable to open profiling directory for writing, code: %d, reason: %s\n", errno, strerror(errno));
             return FAILURE;
         }
@@ -367,18 +367,20 @@ static zend_always_inline transaction *photon_get_current_txn()
 
 static zend_bool photon_should_profile()
 {
-    if (0 == strcmp(sapi_module.name, "cli") && 0 == PHOTON_G(profiling_enable_cli)) {
+    if (0 == strcmp(sapi_module.name, "cli") && 0 == PHOTON_G(profiler_enable_cli)) {
         return 0;
     }
 
-    if (0 == PHOTON_G(profiling_enable)) {
+    if (0 == PHOTON_G(profiler_enable)) {
         return 0;
     }
+
+    // TODO: Extras: if header, or cookie, or query param was provided to trigger profiling
 
     zend_long dice;
     // TODO: This function can throw, need to handle that
     php_random_int(0, 10000, &dice, 0);
-    return (((double)dice) / 100) < PHOTON_G(profiling_sample_freq);
+    return (((double)dice) / 100) < PHOTON_G(profiler_sampling_freq);
 }
 
 static void photon_txn_start(char *endpoint_name)
@@ -397,9 +399,7 @@ static void photon_txn_start(char *endpoint_name)
     next->timer_monotonic = clock_gettime_as_ns(CLOCK_MONOTONIC_RAW);
     next->timer_cpu = clock_gettime_as_ns(CLOCK_THREAD_CPUTIME_ID);
 
-    // TODO: Decide on profiling: copy parent's value or do random number according to rate
-
-    // TODO: If prev exists, copy properties. Otherwise this is a root transaction, resolve from environment
+    // TODO: Copy endpoint name from previous or not?
     if (NULL != endpoint_name) {
         next->endpoint_name = estrdup(endpoint_name);
     } else {
@@ -407,24 +407,23 @@ static void photon_txn_start(char *endpoint_name)
     }
 
     if (NULL != prev) {
-        // TODO: This is a matter of discussion, maybe should be 0 anyway
+        // TODO: This is a matter of discussion, maybe should reset to 0
         next->stack_depth = prev->stack_depth;
-        next->profiling_enable = prev->profiling_enable;
+        next->profiler_enable = prev->profiler_enable;
         next->app_name = estrdup(prev->app_name);
         next->app_version = estrdup(prev->app_version);
         next->app_env = estrdup(prev->app_env);
     } else {
         next->stack_depth = 0;
-        // TODO: Should be calculated from frequency + check config settings (web & CLI)
-        next->profiling_enable = photon_should_profile();
+        next->profiler_enable = photon_should_profile();
         next->app_name = estrdup(PHOTON_G(app_name));
         next->app_version = estrdup(PHOTON_G(app_version));
         next->app_env = estrdup(PHOTON_G(app_env));
     }
 
-    if (next->profiling_enable) {
-        next->profiling_spans = emalloc(sizeof(zend_llist));
-        zend_llist_init(next->profiling_spans, sizeof(profiling_span *), (llist_dtor_func_t) photon_profiling_span_dtor, 0);
+    if (next->profiler_enable) {
+        next->profiler_spans = emalloc(sizeof(zend_llist));
+        zend_llist_init(next->profiler_spans, sizeof(profiler_span *), (llist_dtor_func_t) photon_profiler_span_dtor, 0);
     }
 
     // Push pointer to the transaction onto stack
@@ -440,7 +439,7 @@ static void photon_txn_dtor(transaction *txn)
     efree(txn->endpoint_name);
 }
 
-static void photon_profiling_span_dtor(profiling_span *span)
+static void photon_profiler_span_dtor(profiler_span *span)
 {
     efree(span->name);
     efree(span);
@@ -471,7 +470,7 @@ static void photon_txn_end()
         txn->timestamp
     );
 
-    if (txn->profiling_enable) {
+    if (txn->profiler_enable) {
         // TODO: Create file using path from config
         // ID already is zero-terminated, so don't add +1 to length
         char *filename = emalloc(sizeof("/tmp/profile-") + sizeof(txn->id));
@@ -482,11 +481,11 @@ static void photon_txn_end()
 
         // TODO: Use `zend_llist_apply_with_del`
         zend_llist_element *element, *next;
-        element = txn->profiling_spans->head;
+        element = txn->profiler_spans->head;
         while (element) {
             next = element->next;
             // Watch out: double pointers
-            profiling_span *span = *(profiling_span **)element->data;
+            profiler_span *span = *(profiler_span **)element->data;
 
             fprintf(
                 fp,
@@ -507,8 +506,8 @@ static void photon_txn_end()
 
         // Destroy spans list
         // Destructor will be applied to all elements, see this linked list init
-        zend_llist_destroy(txn->profiling_spans);
-        efree(txn->profiling_spans);
+        zend_llist_destroy(txn->profiler_spans);
+        efree(txn->profiler_spans);
     }
 
     photon_txn_dtor(txn);

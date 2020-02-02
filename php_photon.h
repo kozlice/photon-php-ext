@@ -37,12 +37,12 @@ extern zend_module_entry photon_module_entry;
 ZEND_TSRMLS_CACHE_EXTERN()
 #endif
 
-typedef struct _profiling_span {
+typedef struct _profiler_span {
     char    *name;
     int      stack_depth;
     uint64_t duration_monotonic;
     uint64_t duration_cpu;
-} profiling_span;
+} profiler_span;
 
 typedef struct _transaction {
     // See https://stackoverflow.com/questions/51053568/generating-a-random-uuid-in-c
@@ -56,8 +56,8 @@ typedef struct _transaction {
     uint64_t timer_monotonic;
     uint64_t timer_cpu;
 
-    zend_bool   profiling_enable;
-    zend_llist *profiling_spans;
+    zend_bool   profiler_enable;
+    zend_llist *profiler_spans;
 } transaction;
 
 typedef void (*interceptor_handler)(zend_execute_data *);
@@ -71,10 +71,10 @@ ZEND_BEGIN_MODULE_GLOBALS(photon)
     // Configuration: per module, auto-allocation
     zend_bool enable;
     char *transaction_log_path;
-    char *profiling_report_dir;
-    zend_bool profiling_enable;
-    zend_bool profiling_enable_cli;
-    double profiling_sample_freq;
+    char *profiler_output_dir;
+    zend_bool profiler_enable;
+    zend_bool profiler_enable_cli;
+    double profiler_sampling_freq;
     char *app_name;
     char *app_version;
     char *app_env;
@@ -119,7 +119,7 @@ static void photon_txn_dtor(transaction *txn);
 static zend_always_inline transaction *photon_get_current_txn();
 static void photon_interceptor_add(char *name, interceptor_handler fn);
 static void photon_interceptor_dtor(zval *entry);
-static void photon_profiling_span_dtor(profiling_span *span);
+static void photon_profiler_span_dtor(profiler_span *span);
 static char *photon_get_default_endpoint_name();
 
 PHP_MINIT_FUNCTION(photon);

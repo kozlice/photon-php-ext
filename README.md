@@ -53,10 +53,10 @@ photon.app_env = "dev";
 photon.transaction_log_path = "/var/log/photon-php/transaction.log";
 
 ; Whether to enable or not profiling in web and CLI.
-photon.profiling_enable = 1;
-photon.profiling_enable_cli = 1;
+photon.profiler_enable = 1;
+photon.profiler_enable_cli = 1;
 
 ; What fraction of requests should be profiled. Can be a float,
 ; e.g. `5.8%`.
-photon.profiling_sample_freq = 5%;
+photon.profiler_sampling_freq = 5%;
 ```
