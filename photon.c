@@ -35,7 +35,7 @@
 
 ZEND_DECLARE_MODULE_GLOBALS(photon)
 
-// TODO: Only support up to .01%
+// TODO: Only support up to .01%?
 static PHP_INI_MH(OnUpdateProfilingSampleFreq)
 {
     double percent;
@@ -55,14 +55,14 @@ PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("photon.app_version", "0.1.0", PHP_INI_SYSTEM, OnUpdateStringUnempty, app_version, zend_photon_globals, photon_globals)
     STD_PHP_INI_ENTRY("photon.app_env",     "dev",   PHP_INI_SYSTEM, OnUpdateStringUnempty, app_env,     zend_photon_globals, photon_globals)
 
+    STD_PHP_INI_ENTRY("photon.profiling_enable",      "1",  PHP_INI_SYSTEM, OnUpdateBool,                profiling_enable,      zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiling_enable_cli",  "1",  PHP_INI_SYSTEM, OnUpdateBool,                profiling_enable_cli,  zend_photon_globals, photon_globals)
+    STD_PHP_INI_ENTRY("photon.profiling_sample_freq", "5%", PHP_INI_SYSTEM, OnUpdateProfilingSampleFreq, profiling_sample_freq, zend_photon_globals, photon_globals)
+
+    // TODO: Custom handlers?
     // TODO: Change default path to `/var/log/photon-php/transactions.log` and `/var/log/photon-php/profiler/`
     STD_PHP_INI_ENTRY("photon.transaction_log_path", "/tmp/photon/transactions.log", PHP_INI_SYSTEM, OnUpdateStringUnempty, transaction_log_path, zend_photon_globals, photon_globals)
     STD_PHP_INI_ENTRY("photon.profiling_report_dir", "/tmp/photon/profiler/",        PHP_INI_SYSTEM, OnUpdateStringUnempty, profiling_report_dir, zend_photon_globals, photon_globals)
-
-    STD_PHP_INI_ENTRY("photon.profiling_enable",      "1",  PHP_INI_SYSTEM, OnUpdateBool, profiling_enable,     zend_photon_globals, photon_globals)
-    STD_PHP_INI_ENTRY("photon.profiling_enable_cli",  "1",  PHP_INI_SYSTEM, OnUpdateBool, profiling_enable_cli, zend_photon_globals, photon_globals)
-
-    STD_PHP_INI_ENTRY("photon.profiling_sample_freq", "5%", PHP_INI_SYSTEM, OnUpdateProfilingSampleFreq, profiling_sample_freq, zend_photon_globals, photon_globals)
 PHP_INI_END()
 
 // Returns clock as u64 instead of structure
@@ -424,8 +424,7 @@ static void photon_txn_start(char *endpoint_name)
 
     if (next->profiling_enable) {
         next->profiling_spans = emalloc(sizeof(zend_llist));
-        // TODO: Destructor for spans
-        zend_llist_init(next->profiling_spans, sizeof(profiling_span *), NULL, 0);
+        zend_llist_init(next->profiling_spans, sizeof(profiling_span *), (llist_dtor_func_t) photon_profiling_span_dtor, 0);
     }
 
     // Push pointer to the transaction onto stack
@@ -439,6 +438,12 @@ static void photon_txn_dtor(transaction *txn)
     efree(txn->app_version);
     efree(txn->app_env);
     efree(txn->endpoint_name);
+}
+
+static void photon_profiling_span_dtor(profiling_span *span)
+{
+    efree(span->name);
+    efree(span);
 }
 
 static void photon_txn_end()
@@ -492,8 +497,6 @@ static void photon_txn_end()
                 span->duration_cpu
             );
 
-            efree(span->name);
-            efree(span);
             element = next;
         }
 
@@ -503,7 +506,7 @@ static void photon_txn_end()
         efree(filename);
 
         // Destroy spans list
-        // TODO: Destructor for spans
+        // Destructor will be applied to all elements, see this linked list init
         zend_llist_destroy(txn->profiling_spans);
         efree(txn->profiling_spans);
     }

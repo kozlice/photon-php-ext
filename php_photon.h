@@ -119,6 +119,7 @@ static void photon_txn_dtor(transaction *txn);
 static zend_always_inline transaction *photon_get_current_txn();
 static void photon_interceptor_add(char *name, interceptor_handler fn);
 static void photon_interceptor_dtor(zval *entry);
+static void photon_profiling_span_dtor(profiling_span *span);
 static char *photon_get_default_endpoint_name();
 
 PHP_MINIT_FUNCTION(photon);
