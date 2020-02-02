@@ -128,4 +128,8 @@ PHP_MINFO_FUNCTION(photon);
 PHP_RINIT_FUNCTION(photon);
 PHP_RSHUTDOWN_FUNCTION(photon);
 
+PHP_FUNCTION(photon_get_txn_id);
+PHP_FUNCTION(photon_get_txn_app_name);
+PHP_FUNCTION(photon_set_txn_app_name);
+
 #endif /* PHP_PHOTON_H */

@@ -216,10 +216,6 @@ PHP_MINIT_FUNCTION(photon)
         }
     }
 
-    // Userland constants
-    REGISTER_STRING_CONSTANT("PHOTON_TXN_PROPERTY_APP_NAME", "app_name", CONST_CS | CONST_PERSISTENT);
-    // TODO: The rest of them
-
     // Init interceptors
     // TODO: See if we can make it work faster by using a custom hash function
     PHOTON_INTERCEPTORS = pemalloc(sizeof(HashTable), 1);
@@ -516,7 +512,57 @@ static void photon_txn_end()
     efree(txn);
 }
 
+PHP_FUNCTION(photon_get_txn_id) {
+    if (PHOTON_NOT_ENABLED) {
+        RETURN_NULL();
+    }
+
+    // TODO: Could null occur here?
+    transaction *txn = photon_get_current_txn();
+    RETURN_STRING(txn->id);
+}
+
+PHP_FUNCTION(photon_get_txn_app_name) {
+    if (PHOTON_NOT_ENABLED) {
+        RETURN_NULL();
+    }
+
+    // TODO: Could null occur here?
+    transaction *txn = photon_get_current_txn();
+    RETURN_STRING(txn->app_name);
+}
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_photon_set_txn_app_name, 0, 0, 1)
+    ZEND_ARG_TYPE_INFO(0, value, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+PHP_FUNCTION(photon_set_txn_app_name) {
+    zend_string *value = NULL;
+
+    // TODO: This produces a warning and returns null. Would it be better to fail with error?
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR_EX(value, 1, 0)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (0 == ZSTR_LEN(value)) {
+        php_error_docref(NULL, E_WARNING, "app name must be a non-empty string");
+        RETURN_FALSE;
+    }
+
+    // TODO: Is everything correct here?
+    transaction *txn = photon_get_current_txn();
+    txn->app_name = estrdup(ZSTR_VAL(value));
+
+    zend_string_release(value);
+    RETURN_TRUE;
+}
+
+// TODO: Getters & setters: app name+version+env, endpoint
+// TODO: Getters: id, mode
 static const zend_function_entry photon_functions[] = {
+    PHP_FE(photon_get_txn_id, NULL)
+    PHP_FE(photon_get_txn_app_name, NULL)
+    PHP_FE(photon_set_txn_app_name, arginfo_photon_set_txn_app_name)
     PHP_FE_END
 };
 
