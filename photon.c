@@ -45,7 +45,6 @@ static PHP_INI_MH(OnUpdateProfilingSampleFreq)
     percent = percent > 100.0 ? 100.0 : percent;
 
     PHOTON_G(profiling_sample_freq) = percent;
-
     return SUCCESS;
 }
 
@@ -92,13 +91,15 @@ static void (*original_zend_execute_internal)(zend_execute_data *execute_data, z
 // Execution interceptor
 ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_execute_data *execute_data, zval *return_value)
 {
-    // TODO: Use stack depth for current transaction
     transaction *txn = photon_get_current_txn();
     txn->stack_depth++;
 
-    // TODO: See how methods are named: class name when extending, renamed methods from traits, etc.
     zend_function *zf = execute_data->func;
 
+    // TODO: Tests are required to check that everything is properly named in the profile result
+    // TODO: - when method is called from parent class, the parent's name is shown, not the class itself
+    // TODO: - when method from trait is called, classname is shown
+    // TODO: - when method from trait is renamed (A::stuff as other), original name is still shown (stuff)
     const char *class_name = (zf->common.scope != NULL && zf->common.scope->name != NULL) ? ZSTR_VAL(zf->common.scope->name) : NULL;
     const char *function_name = zf->common.function_name == NULL ? NULL : ZSTR_VAL(zf->common.function_name);
 
@@ -123,7 +124,7 @@ ZEND_API static zend_always_inline void photon_execute_base(char internal, zend_
         interceptor **itc_ptr = zend_hash_str_find_ptr(PHOTON_INTERCEPTORS, itc_name.c, itc_name.len);
         if (NULL != itc_ptr) {
             itc = *itc_ptr;
-            // TODO: Split callback into before & after
+            // TODO: Split callback into before & after?
             if (NULL != itc && NULL != itc->fn) {
                 itc->fn(execute_data);
             }
@@ -199,13 +200,20 @@ PHP_MINIT_FUNCTION(photon)
     }
 
     // Open transaction log
-    // TODO: If log opening failed, log error, disable extension & return early
+    // TODO: Disable extension or trigger failure?
     PHOTON_TXN_LOG = fopen(PHOTON_G(transaction_log_path), "a");
+    if (NULL == PHOTON_TXN_LOG) {
+        PHOTON_ERROR("[PHOTON] Unable to open transaction log for writing, code: %d, reason: %s\n", errno, strerror(errno));
+        return FAILURE;
+    }
 
-    // TODO: If profiling is enabled, ensure directory
-    // TODO: In case of error, disable extension & return early
+    // If profiling is enabled, ensure directory
+    // TODO: Disable extension or trigger failure?
     if (1 == PHOTON_G(profiling_enable) || 1 == PHOTON_G(profiling_enable_cli)) {
-
+        if (0 != access(PHOTON_G(profiling_report_dir), W_OK)) {
+            PHOTON_ERROR("[PHOTON] Unable to open profiling directory for writing, code: %d, reason: %s\n", errno, strerror(errno));
+            return FAILURE;
+        }
     }
 
     // Userland constants

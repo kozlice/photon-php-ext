@@ -20,6 +20,8 @@
 // TODO: Only keep what we need
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <time.h>
 #include <inttypes.h>
@@ -99,6 +101,7 @@ ZEND_EXTERN_MODULE_GLOBALS(photon)
 #define PHOTON_TXN_LOG      PHOTON_G(transaction_log)
 #define PHOTON_TXN_STACK    PHOTON_G(transaction_stack)
 #define PHOTON_INTERCEPTORS PHOTON_G(interceptor_table)
+#define PHOTON_ERROR(format, ...) fprintf(stderr, format, __VA_ARGS__)
 
 #define PHOTON_ITC_SEPARATOR "::"
 
